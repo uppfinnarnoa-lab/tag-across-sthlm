@@ -16,11 +16,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('Connected to the SQLite database.');
     
     db.serialize(() => {
-      // Teams table extended with game logic and passcode
+      // Teams table extended with game logic
       db.run(`CREATE TABLE IF NOT EXISTS teams (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        passcode TEXT NOT NULL,
         points REAL DEFAULT 0,
         role TEXT DEFAULT 'chaser',
         lat REAL,
@@ -29,6 +28,16 @@ const db = new sqlite3.Database(dbPath, (err) => {
         transport_start_time DATETIME,
         head_start_until DATETIME,
         current_destination_id INTEGER
+      )`);
+
+      // Players table for the Lobby system
+      db.run(`CREATE TABLE IF NOT EXISTS players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        team_id INTEGER,
+        socket_id TEXT,
+        last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams(id)
       )`);
 
       // Cards table (Destinations have coordinates)
@@ -46,6 +55,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
       db.run(`CREATE TABLE IF NOT EXISTS feed (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         team_id INTEGER,
+        player_name TEXT,
         type TEXT,
         message TEXT,
         image_url TEXT,
@@ -56,6 +66,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
       db.run(`CREATE TABLE IF NOT EXISTS global_state (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         status TEXT DEFAULT 'waiting',
+        game_pin TEXT,
         lunch_break_active BOOLEAN DEFAULT 0,
         lunch_break_until DATETIME
       )`);
@@ -63,8 +74,8 @@ const db = new sqlite3.Database(dbPath, (err) => {
       // Seed initial teams if not exists
       db.get("SELECT count(*) as count FROM teams", (err, row) => {
         if (row && row.count === 0) {
-            db.run(`INSERT INTO teams (name, passcode, role) VALUES ('Lag Röd', '1111', 'chaser'), ('Lag Blå', '2222', 'chaser'), ('Lag Grön', '3333', 'runner'), ('Admin', '9999', 'admin')`);
-            db.run(`INSERT INTO global_state (id, status) VALUES (1, 'waiting')`);
+            db.run(`INSERT INTO teams (name, role) VALUES ('Lag Röd', 'chaser'), ('Lag Blå', 'chaser'), ('Lag Grön', 'runner')`);
+            db.run(`INSERT INTO global_state (id, status, game_pin) VALUES (1, 'waiting', NULL)`);
             console.log("Seeded initial teams and state.");
         }
       });
