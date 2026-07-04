@@ -143,7 +143,7 @@ app.post('/api/owntracks', (req, res) => {
     const teamNameSlug = parts[parts.length - 1]; 
     
     // Convert slug back to team name or search
-    const searchMap: any = {
+    const searchMap = {
       'lag-rod': 'Lag Röd',
       'lag-bla': 'Lag Blå',
       'lag-gron': 'Lag Grön'
