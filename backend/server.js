@@ -2,62 +2,127 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const db = require('./database');
+require('./seed');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // Will be restricted to tag.helgars.se in production
+    origin: ["https://tag.helgars.se", "http://localhost:3000"], 
     methods: ["GET", "POST"]
   }
 });
 
-const db = require('./database');
-require('./seed');
+// Setup uploads folder securely
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+// Multer storage with secure filenames
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir)
+  },
+  filename: function (req, file, cb) {
+    // Avoid directory traversal by sanitizing filename
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-]/g, '_');
+    cb(null, Date.now() + '-' + safeName)
+  }
+});
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 25 * 1024 * 1024 } // 25 MB limit
+});
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(uploadDir));
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Tåg across Stockholm API is running' });
+  res.json({ status: 'ok', message: 'API running' });
 });
 
-// Hämta spelstatus (lag och poäng)
+// Game state
 app.get('/api/game/state', (req, res) => {
   db.all("SELECT * FROM teams ORDER BY points DESC", [], (err, teams) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ teams });
+    db.get("SELECT * FROM global_state WHERE id = 1", (err, state) => {
+      res.json({ teams, state });
+    });
   });
 });
 
-// Dra ett kort slumpmässigt
+// Draw a card
 app.post('/api/cards/draw', (req, res) => {
-  const { type } = req.body; // 'destination' eller 'challenge'
-  if (!['destination', 'challenge'].includes(type)) {
-    return res.status(400).json({ error: 'Invalid card type' });
-  }
-
+  const { type, team_id } = req.body; 
   db.get("SELECT * FROM cards WHERE type = ? AND drawn = 0 ORDER BY RANDOM() LIMIT 1", [type], (err, card) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (!card) return res.status(404).json({ error: 'No cards left in this deck!' });
+    if (!card) return res.status(404).json({ error: 'No cards left!' });
 
-    // Markera som draget
     db.run("UPDATE cards SET drawn = 1 WHERE id = ?", [card.id], (err) => {
       if (err) return res.status(500).json({ error: err.message });
-      
-      // I en full implementation skulle vi koppla kortet till ett specifikt lag, 
-      // men vi returnerar det till klienten för nu.
+      io.emit('card_drawn', { team_id, card });
       res.json({ card });
     });
   });
 });
 
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
-  
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+// TAGEN! logic
+app.post('/api/game/tag', upload.single('media'), (req, res) => {
+  const { team_id } = req.body;
+  if (!team_id) return res.status(400).json({ error: 'Missing team_id' });
+
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  const fifteenMinsLater = new Date(Date.now() + 15 * 60000).toISOString();
+
+  // 1. All teams become chasers
+  db.run("UPDATE teams SET role = 'chaser', head_start_until = NULL", [], (err) => {
+    // 2. The tagging team becomes runner and gets 15 min head start
+    db.run("UPDATE teams SET role = 'runner', head_start_until = ? WHERE id = ?", [fifteenMinsLater, team_id], (err) => {
+      // 3. Post to feed
+      db.run("INSERT INTO feed (team_id, type, message, image_url) VALUES (?, 'tag', 'TAGEN!', ?)", [team_id, imageUrl], (err) => {
+        io.emit('tagged', { team_id, imageUrl, head_start_until: fifteenMinsLater });
+        res.json({ success: true, message: 'Tagen registrerad!' });
+      });
+    });
   });
+});
+
+// Update position
+app.post('/api/game/position', (req, res) => {
+  const { team_id, lat, lng } = req.body;
+  db.run("UPDATE teams SET lat = ?, lng = ? WHERE id = ?", [lat, lng, team_id], (err) => {
+    io.emit('position_update', { team_id, lat, lng });
+    res.json({ success: true });
+  });
+});
+
+// Claim destination
+app.post('/api/game/claim', upload.single('media'), (req, res) => {
+  const { team_id, points } = req.body;
+  if (!team_id || !points) return res.status(400).json({ error: 'Missing team_id or points' });
+
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  const numPoints = parseFloat(points);
+
+  db.run("UPDATE teams SET points = points + ? WHERE id = ?", [numPoints, team_id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    db.run("INSERT INTO feed (team_id, type, message, image_url) VALUES (?, 'claim', 'Framme vid destination!', ?)", [team_id, imageUrl], (err) => {
+      io.emit('claimed', { team_id, points: numPoints, imageUrl });
+      res.json({ success: true, message: 'Poäng registrerade!' });
+    });
+  });
+});
+
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
 });
 
 const PORT = process.env.PORT || 3001;

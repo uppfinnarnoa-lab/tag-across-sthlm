@@ -52,6 +52,15 @@ export default function Home() {
       <Link to="/play" style={{ textDecoration: 'none' }}>
         <button className="blue">Gå till Spelvyn &gt;</button>
       </Link>
+      <Link to="/map" style={{ textDecoration: 'none' }}>
+        <button className="green">Gå till Karta &gt;</button>
+      </Link>
+      <Link to="/feed" style={{ textDecoration: 'none' }}>
+        <button className="red">Live Feed (TAGEN!) &gt;</button>
+      </Link>
+      <Link to="/admin" style={{ textDecoration: 'none' }}>
+        <button className="blue" style={{ background: '#333' }}>Domarpanel &gt;</button>
+      </Link>
     </>
   );
 }
