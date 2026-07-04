@@ -11,9 +11,11 @@ För att säkerställa högsta kvalitet och konsekvens vid utvecklingen av "Tåg
 * Följ projektets etablerade stil och arkitektur (Frontend i Vite/React, Backend i Node.js).
 * Skriv ren och väldokumenterad kod.
 
-## 3. Verifikation (Audit)
-* Kör applikationen och säkerställ att koden bygger utan fel (`npm run build`).
-* Verifiera att de implementerade funktionerna uppfyller kraven enligt specifikationen (exempelvis regelboken).
+## 3. Verifikation (Audit) & Dev Server
+* Applikationen MÅSTE testas lokalt i en utvecklingsmiljö via Docker.
+* Efter ändringar, starta om dev-servern med `docker-compose restart` (eller kör upp den med `docker-compose up -d --build` om den är nere).
+* Verifiera att de implementerade funktionerna uppfyller kraven enligt specifikationen och fungerar i Docker-miljön innan vidare steg tas.
+* Säkerställ att koden bygger utan fel.
 
 ## 4. Arkivering
 * När ändringarna är verifierade, flytta/arkivera implementationsplanen (`.md`-filen) till `docs/archive/`.

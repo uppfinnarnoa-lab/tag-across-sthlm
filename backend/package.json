@@ -1,0 +1,17 @@
+{
+  "name": "tag-across-sthlm-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Tag across Stockholm",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.5",
+    "sqlite3": "^5.1.7"
+  }
+}
