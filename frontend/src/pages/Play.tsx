@@ -56,7 +56,9 @@ export default function Play() {
       <button className="blue" onClick={() => drawCard('destination')}>Dra Destinationskort</button>
       <button className="green" onClick={() => drawCard('challenge')}>Dra Extrauppdrag</button>
       
-      <button className="red" style={{ marginTop: '32px' }}>TAGEN!</button>
+      <Link to="/feed" style={{ textDecoration: 'none' }}>
+        <button className="red" style={{ marginTop: '32px' }}>TAGEN!</button>
+      </Link>
 
       <Link to="/" style={{ display: 'block', textAlign: 'center', marginTop: '16px', color: 'var(--text-color)', fontSize: '10px' }}>
         &lt; Tillbaka till Leaderboard

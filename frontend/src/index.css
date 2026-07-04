@@ -1,13 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
 :root {
-  --sl-blue: #0076D1;
-  --sl-red: #D71D24;
-  --sl-green: #00874C;
-  --bg-color: #F0F0F0;
-  --text-color: #1A1A1A;
-  --border-color: #000000;
+  /* Premium SL Colors */
+  --sl-dark-blue: #0A192F;
+  --sl-light-blue: #00AEEF;
+  --sl-yellow: #FFC000;
+  --sl-red: #E60000;
+  --sl-green: #008C3A;
   
-  --shadow-pixel: 4px 4px 0px var(--border-color);
-  --shadow-pixel-hover: 2px 2px 0px var(--border-color);
+  --bg-color: var(--sl-dark-blue);
+  --text-color: #FFFFFF;
+  --panel-bg: rgba(10, 25, 47, 0.85); /* Glassmorphism/Dark */
+  --border-color: #ffffff;
 }
 
 * {
@@ -16,72 +20,144 @@
 
 body {
   margin: 0;
-  padding: 0;
+  font-family: 'Press Start 2P', monospace;
   background-color: var(--bg-color);
+  background-image: url('/sl_stripes.png');
+  background-size: 256px 256px; /* Pixel art scaling */
+  background-repeat: repeat;
+  image-rendering: pixelated;
   color: var(--text-color);
-  font-family: 'Press Start 2P', monospace; /* Pixel art font */
-  -webkit-font-smoothing: none; /* Make fonts sharp */
-  font-smooth: never;
-  image-rendering: pixelated; /* Make images sharp */
-  display: flex;
-  justify-content: center;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  animation: moveStripes 30s linear infinite;
+}
+
+@keyframes moveStripes {
+  from { background-position: 0 0; }
+  to { background-position: -256px 0; }
 }
 
 #root {
   width: 100%;
-  max-width: 600px; /* Mobile first layout */
+  max-width: 480px;
+  background: rgba(0, 0, 0, 0.4);
   padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(0, 174, 239, 0.4);
+  backdrop-filter: blur(4px);
+  border: 2px solid var(--sl-light-blue);
 }
 
-/* Pixel Art Buttons */
+h1, h2, h3 {
+  text-shadow: 2px 2px 0px #000;
+  margin-top: 0;
+}
+
+.pixel-panel {
+  background-color: var(--panel-bg);
+  border: 4px solid var(--border-color);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 
+    inset -4px -4px 0px 0px rgba(0,0,0,0.5),
+    4px 4px 0px 0px rgba(0,0,0,0.8);
+}
+
+/* Premium Arcade Buttons */
 button {
   font-family: 'Press Start 2P', monospace;
-  background-color: var(--sl-blue);
-  color: white;
-  border: 4px solid var(--border-color);
-  padding: 12px 16px;
-  box-shadow: var(--shadow-pixel);
-  cursor: pointer;
-  text-transform: uppercase;
   font-size: 12px;
-  transition: all 0.1s ease;
+  padding: 16px;
   width: 100%;
   margin-bottom: 16px;
+  border: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  color: white;
+  background-color: #555;
+  box-shadow: 
+    inset -4px -4px 0px 0px rgba(0,0,0,0.4),
+    inset 4px 4px 0px 0px rgba(255,255,255,0.2),
+    0px 4px 0px 0px #222,
+    0px 6px 4px 0px rgba(0,0,0,0.5);
+  transition: all 0.1s;
+  image-rendering: pixelated;
 }
 
 button:active {
-  box-shadow: 0px 0px 0px var(--border-color);
-  transform: translate(4px, 4px);
+  transform: translateY(4px);
+  box-shadow: 
+    inset -2px -2px 0px 0px rgba(0,0,0,0.4),
+    inset 2px 2px 0px 0px rgba(255,255,255,0.2),
+    0px 0px 0px 0px #222;
+}
+
+button:hover {
+  filter: brightness(1.2);
+}
+
+button.blue {
+  background-color: var(--sl-light-blue);
+  box-shadow: 
+    inset -4px -4px 0px 0px rgba(0,0,0,0.2),
+    inset 4px 4px 0px 0px rgba(255,255,255,0.4),
+    0px 4px 0px 0px #007bb5,
+    0px 6px 4px 0px rgba(0,0,0,0.5);
+}
+
+button.blue:active {
+  box-shadow: 0px 0px 0px 0px #007bb5;
 }
 
 button.red {
   background-color: var(--sl-red);
+  box-shadow: 
+    inset -4px -4px 0px 0px rgba(0,0,0,0.2),
+    inset 4px 4px 0px 0px rgba(255,255,255,0.4),
+    0px 4px 0px 0px #990000,
+    0px 6px 4px 0px rgba(0,0,0,0.5);
+}
+
+button.red:active {
+  box-shadow: 0px 0px 0px 0px #990000;
 }
 
 button.green {
   background-color: var(--sl-green);
+  box-shadow: 
+    inset -4px -4px 0px 0px rgba(0,0,0,0.2),
+    inset 4px 4px 0px 0px rgba(255,255,255,0.4),
+    0px 4px 0px 0px #004d20,
+    0px 6px 4px 0px rgba(0,0,0,0.5);
 }
 
-/* Pixel Art Cards/Panels */
-.pixel-panel {
-  background-color: white;
-  border: 4px solid var(--border-color);
-  padding: 24px;
-  box-shadow: var(--shadow-pixel);
-  margin-bottom: 24px;
+button.green:active {
+  box-shadow: 0px 0px 0px 0px #004d20;
 }
 
-h1, h2, h3 {
-  margin-top: 0;
-  line-height: 1.4;
+button.yellow {
+  background-color: var(--sl-yellow);
+  color: var(--sl-dark-blue);
+  box-shadow: 
+    inset -4px -4px 0px 0px rgba(0,0,0,0.2),
+    inset 4px 4px 0px 0px rgba(255,255,255,0.8),
+    0px 4px 0px 0px #b38600,
+    0px 6px 4px 0px rgba(0,0,0,0.5);
 }
 
-h1 { font-size: 20px; text-align: center; color: var(--sl-blue); text-shadow: 2px 2px 0px #FFF, 4px 4px 0px var(--border-color); }
-h2 { font-size: 16px; }
-h3 { font-size: 12px; }
+button.yellow:active {
+  box-shadow: 0px 0px 0px 0px #b38600;
+}
 
-p {
-  font-size: 10px;
-  line-height: 1.8;
+/* Animations */
+.bounce {
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }

@@ -48,13 +48,47 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API running' });
 });
 
+// Login logik
+app.post('/api/auth/login', (req, res) => {
+  const { passcode } = req.body;
+  if (!passcode) return res.status(400).json({ error: 'Passcode saknas' });
+
+  db.get("SELECT id, name, role FROM teams WHERE passcode = ?", [passcode], (err, team) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!team) return res.status(401).json({ error: 'Felaktig PIN-kod' });
+    res.json({ success: true, team });
+  });
+});
+
 // Game state
 app.get('/api/game/state', (req, res) => {
-  db.all("SELECT * FROM teams ORDER BY points DESC", [], (err, teams) => {
+  db.all("SELECT id, name, points, role, lat, lng FROM teams ORDER BY points DESC", [], (err, teams) => {
     if (err) return res.status(500).json({ error: err.message });
     db.get("SELECT * FROM global_state WHERE id = 1", (err, state) => {
       res.json({ teams, state });
     });
+  });
+});
+
+// Starta spelet (Admin)
+app.post('/api/game/start', (req, res) => {
+  db.run("UPDATE teams SET points = 0, role = 'chaser' WHERE name != 'Lag Grön' AND name != 'Admin'", [], () => {
+    db.run("UPDATE teams SET role = 'runner' WHERE name = 'Lag Grön'", [], () => {
+      db.run("UPDATE cards SET drawn = 0", [], () => {
+        db.run("UPDATE global_state SET status = 'playing' WHERE id = 1", [], () => {
+          io.emit('game_started', { message: 'Spelet har börjat!' });
+          res.json({ success: true });
+        });
+      });
+    });
+  });
+});
+
+// Hämta destinationer (för kartan)
+app.get('/api/game/destinations', (req, res) => {
+  db.all("SELECT id, name, lat, lng FROM cards WHERE type = 'destination'", [], (err, destinations) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ destinations });
   });
 });
 

@@ -16,10 +16,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('Connected to the SQLite database.');
     
     db.serialize(() => {
-      // Teams table extended with game logic
+      // Teams table extended with game logic and passcode
       db.run(`CREATE TABLE IF NOT EXISTS teams (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        passcode TEXT NOT NULL,
         points REAL DEFAULT 0,
         role TEXT DEFAULT 'chaser',
         lat REAL,
@@ -30,12 +31,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
         current_destination_id INTEGER
       )`);
 
-      // Cards table
+      // Cards table (Destinations have coordinates)
       db.run(`CREATE TABLE IF NOT EXISTS cards (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL, 
         name TEXT NOT NULL,
         value REAL NOT NULL, 
+        lat REAL,
+        lng REAL,
         drawn BOOLEAN DEFAULT 0
       )`);
 
@@ -52,6 +55,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
       // Global Game State
       db.run(`CREATE TABLE IF NOT EXISTS global_state (
         id INTEGER PRIMARY KEY CHECK (id = 1),
+        status TEXT DEFAULT 'waiting',
         lunch_break_active BOOLEAN DEFAULT 0,
         lunch_break_until DATETIME
       )`);
@@ -59,8 +63,8 @@ const db = new sqlite3.Database(dbPath, (err) => {
       // Seed initial teams if not exists
       db.get("SELECT count(*) as count FROM teams", (err, row) => {
         if (row && row.count === 0) {
-            db.run(`INSERT INTO teams (name, role) VALUES ('Lag Röd', 'chaser'), ('Lag Blå', 'chaser'), ('Lag Grön', 'runner')`);
-            db.run(`INSERT INTO global_state (id, lunch_break_active) VALUES (1, 0)`);
+            db.run(`INSERT INTO teams (name, passcode, role) VALUES ('Lag Röd', '1111', 'chaser'), ('Lag Blå', '2222', 'chaser'), ('Lag Grön', '3333', 'runner'), ('Admin', '9999', 'admin')`);
+            db.run(`INSERT INTO global_state (id, status) VALUES (1, 'waiting')`);
             console.log("Seeded initial teams and state.");
         }
       });
