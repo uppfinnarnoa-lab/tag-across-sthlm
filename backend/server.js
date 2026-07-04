@@ -11,11 +11,7 @@ const server = http.createServer(app);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const allowedOrigins = ['http://localhost:3001', 'http://localhost:3000', 'https://tag.helgars.se'];
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
@@ -23,7 +19,7 @@ app.use((req, res, next) => {
 
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3001', 'http://localhost:3000', 'https://tag.helgars.se'],
+    origin: '*',
     methods: ['GET', 'POST', 'PUT']
   }
 });
