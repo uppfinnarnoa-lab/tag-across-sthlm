@@ -92,6 +92,29 @@ app.get('/api/game/destinations', (req, res) => {
   });
 });
 
+// ADMIN: Hämta alla kort
+app.get('/api/admin/cards', (req, res) => {
+  db.all("SELECT * FROM cards", [], (err, cards) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ cards });
+  });
+});
+
+// ADMIN: Uppdatera ett kort
+app.put('/api/admin/cards/:id', (req, res) => {
+  const { id } = req.params;
+  const { name, value, lat, lng } = req.body;
+  
+  db.run(
+    "UPDATE cards SET name = ?, value = ?, lat = ?, lng = ? WHERE id = ?",
+    [name, value, lat, lng, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, changes: this.changes });
+    }
+  );
+});
+
 // Draw a card
 app.post('/api/cards/draw', (req, res) => {
   const { type, team_id } = req.body; 

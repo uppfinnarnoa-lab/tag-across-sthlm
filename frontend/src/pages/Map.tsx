@@ -16,6 +16,7 @@ interface Destination {
 export default function MapView() {
   const [positions, setPositions] = useState<{ [teamId: number]: [number, number] }>({});
   const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
   const wakeLock = useRef<any>(null);
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function MapView() {
     // 4. Request WakeLock (Håll skärmen vaken)
     const requestWakeLock = async () => {
       try {
-        if ('wakeLock' in navigator) {
+        if ('wakeLock' in navigator && wakeLockEnabled) {
           wakeLock.current = await (navigator as any).wakeLock.request('screen');
         }
       } catch (err) {
@@ -68,14 +69,28 @@ export default function MapView() {
     return () => {
       socket.off('position_update');
       if (watchId) navigator.geolocation.clearWatch(watchId);
-      if (wakeLock.current) wakeLock.current.release();
+      if (wakeLock.current) {
+        wakeLock.current.release();
+        wakeLock.current = null;
+      }
     };
-  }, []);
+  }, [wakeLockEnabled]);
+
+  const toggleWakeLock = () => {
+    setWakeLockEnabled(!wakeLockEnabled);
+  };
 
   return (
     <>
       <div style={{ textAlign: 'center', marginBottom: '16px' }}>
         <h1>LIVEKARTA</h1>
+        <button 
+          className={wakeLockEnabled ? "yellow" : "blue"} 
+          onClick={toggleWakeLock}
+          style={{ width: 'auto', padding: '8px', fontSize: '10px' }}
+        >
+          {wakeLockEnabled ? "WakeLock PÅ (Kräver mer batteri)" : "WakeLock AV (Sparar batteri)"}
+        </button>
       </div>
 
       <div className="pixel-panel" style={{ padding: '4px', height: '400px' }}>
