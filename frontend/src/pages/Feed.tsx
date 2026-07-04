@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const socket = io('http://localhost:3001');
+const socket = io('http://localhost:3002');
 
 interface Post {
   id: number;
@@ -38,7 +38,7 @@ export default function Feed() {
 
     const endpoint = type === 'tag' ? '/api/game/tag' : '/api/game/claim';
     
-    await fetch(`http://localhost:3001${endpoint}`, {
+    await fetch(`http://localhost:3002${endpoint}`, {
       method: 'POST',
       body: formData
     });
@@ -58,7 +58,7 @@ export default function Feed() {
         {posts.map(post => (
           <div key={post.id} className="pixel-panel" style={{ padding: '8px' }}>
             <h3 style={{ color: post.type === 'tag' ? 'var(--sl-red)' : 'var(--sl-green)' }}>{post.message}</h3>
-            {post.image_url && <img src={`http://localhost:3001${post.image_url}`} alt="Bevis" style={{ width: '100%', imageRendering: 'auto' }} />}
+            {post.image_url && <img src={`http://localhost:3002${post.image_url}`} alt="Bevis" style={{ width: '100%', imageRendering: 'auto' }} />}
             <p>Lag {post.team_id}</p>
           </div>
         ))}

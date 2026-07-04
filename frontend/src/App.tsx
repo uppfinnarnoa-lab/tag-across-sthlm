@@ -16,7 +16,7 @@ function App() {
 
   const fetchState = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/game/state');
+      const res = await fetch('http://localhost:3002/api/game/state');
       const data = await res.json();
       if (data.state) setGameState(data.state.status);
     } catch(e) {}

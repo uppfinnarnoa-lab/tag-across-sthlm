@@ -14,7 +14,7 @@ export default function Play() {
 
   const drawCard = async (type: 'destination' | 'challenge') => {
     try {
-      const res = await fetch('http://localhost:3001/api/cards/draw', {
+      const res = await fetch('http://localhost:3002/api/cards/draw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type })

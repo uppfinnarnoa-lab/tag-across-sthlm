@@ -6,7 +6,7 @@ export default function Login({ onLogin }: { onLogin: (team: any) => void }) {
 
   const handleLogin = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/auth/login', {
+      const res = await fetch('http://localhost:3002/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode })

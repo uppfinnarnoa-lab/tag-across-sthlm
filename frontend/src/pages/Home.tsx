@@ -12,7 +12,7 @@ export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/game/state')
+    fetch('http://localhost:3002/api/game/state')
       .then(res => res.json())
       .then(data => setTeams(data.teams || []))
       .catch(console.error);

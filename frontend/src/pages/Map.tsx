@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import io from 'socket.io-client';
 import L from 'leaflet';
 
-const socket = io('http://localhost:3001');
+const socket = io('http://localhost:3002');
 
 // Custom ikoner
 const markerIcon = new L.Icon({
@@ -30,7 +30,7 @@ export default function MapView() {
 
   useEffect(() => {
     const fetchState = async () => {
-      const res = await fetch('http://localhost:3001/api/game/state');
+      const res = await fetch('http://localhost:3002/api/game/state');
       const data = await res.json();
       if (data.state) setGpsMode(data.state.gps_mode);
       
@@ -42,7 +42,7 @@ export default function MapView() {
     };
     fetchState();
 
-    fetch('http://localhost:3001/api/game/destinations')
+    fetch('http://localhost:3002/api/game/destinations')
       .then(res => res.json())
       .then(data => setDestinations(data.destinations));
 
@@ -60,7 +60,7 @@ export default function MapView() {
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             const { latitude, longitude } = pos.coords;
-            fetch('http://localhost:3001/api/game/position', {
+            fetch('http://localhost:3002/api/game/position', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ team_id: team.team_id, lat: latitude, lng: longitude })

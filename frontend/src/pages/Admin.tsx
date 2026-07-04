@@ -18,15 +18,15 @@ export default function Admin() {
   const [gameState, setGameState] = useState<any>(null);
 
   const fetchData = async () => {
-    const resCards = await fetch('http://localhost:3001/api/admin/cards');
+    const resCards = await fetch('http://localhost:3002/api/admin/cards');
     const dataCards = await resCards.json();
     setCards(dataCards.cards);
 
-    const resLobby = await fetch('http://localhost:3001/api/lobby');
+    const resLobby = await fetch('http://localhost:3002/api/lobby');
     const dataLobby = await resLobby.json();
     setPlayers(dataLobby.players);
 
-    const resState = await fetch('http://localhost:3001/api/game/state');
+    const resState = await fetch('http://localhost:3002/api/game/state');
     const dataState = await resState.json();
     setGameState(dataState.state);
   };
@@ -45,22 +45,22 @@ export default function Admin() {
   };
 
   const handleCreateGame = async () => {
-    await fetch('http://localhost:3001/api/admin/create_game', { method: 'POST' });
+    await fetch('http://localhost:3002/api/admin/create_game', { method: 'POST' });
     fetchData();
   };
 
   const handleStartGame = async () => {
-    await fetch('http://localhost:3001/api/game/start', { method: 'POST' });
+    await fetch('http://localhost:3002/api/game/start', { method: 'POST' });
     fetchData();
   };
 
   const handleRandomize = async () => {
-    await fetch('http://localhost:3001/api/admin/randomize_teams', { method: 'POST' });
+    await fetch('http://localhost:3002/api/admin/randomize_teams', { method: 'POST' });
     fetchData();
   };
 
   const handleAssign = async (playerId: number, teamId: number) => {
-    await fetch('http://localhost:3001/api/admin/assign_team', { 
+    await fetch('http://localhost:3002/api/admin/assign_team', { 
       method: 'POST', 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ player_id: playerId, team_id: teamId })
@@ -72,13 +72,13 @@ export default function Admin() {
     if (!editingCard) return;
     
     if (editingCard.id) {
-      await fetch(`http://localhost:3001/api/admin/cards/${editingCard.id}`, {
+      await fetch(`http://localhost:3002/api/admin/cards/${editingCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingCard)
       });
     } else {
-      await fetch(`http://localhost:3001/api/admin/cards`, {
+      await fetch(`http://localhost:3002/api/admin/cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingCard)
@@ -111,7 +111,7 @@ export default function Admin() {
           <label><strong>Välj GPS-läge:</strong></label>
           <select 
             value={gameState?.gps_mode || 'wakelock'} 
-            onChange={e => fetch(`http://localhost:3001/api/admin/gps_mode`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode: e.target.value }) }).then(fetchData)}
+            onChange={e => fetch(`http://localhost:3002/api/admin/gps_mode`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode: e.target.value }) }).then(fetchData)}
             style={{ width: '100%', padding: '8px', marginTop: '8px', fontFamily: 'inherit', fontSize: '10px' }}
           >
             <option value="wakelock">1. WakeLock (Standard, Håll skärmen på)</option>

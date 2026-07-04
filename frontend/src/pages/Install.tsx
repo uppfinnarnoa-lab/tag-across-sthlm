@@ -9,7 +9,7 @@ export default function Install() {
     const saved = localStorage.getItem('player');
     if (saved) setPlayer(JSON.parse(saved));
 
-    fetch('http://localhost:3001/api/game/state')
+    fetch('http://localhost:3002/api/game/state')
       .then(res => res.json())
       .then(data => {
         if (data.state) setGpsMode(data.state.gps_mode);
@@ -22,7 +22,7 @@ export default function Install() {
     return teams[player.team_id - 1] || 'okant-lag';
   };
 
-  const owntracksConfigUrl = `owntracks:///config?url=http://localhost:3001/api/owntracks`;
+  const owntracksConfigUrl = `owntracks:///config?url=http://localhost:3002/api/owntracks`;
 
   return (
     <div style={{ paddingBottom: '64px', textAlign: 'center' }}>

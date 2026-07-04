@@ -9,7 +9,7 @@ export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
 
   const handleJoin = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/auth/join', {
+      const res = await fetch('http://localhost:3002/api/auth/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin, name })

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
-const socket = io('http://localhost:3001');
+const socket = io('http://localhost:3002');
 
 export default function Lobby({ player, onGameStart }: { player: any, onGameStart: () => void }) {
   const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
   
   const fetchLobby = async () => {
-    const res = await fetch('http://localhost:3001/api/lobby');
+    const res = await fetch('http://localhost:3002/api/lobby');
     const data = await res.json();
     setLobbyPlayers(data.players || []);
   };
