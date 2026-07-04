@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const allowedOrigins = ['http://localhost:3000', 'https://tag.helgars.se'];
+  const allowedOrigins = ['http://localhost:3001', 'http://localhost:3000', 'https://tag.helgars.se'];
   if (allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
   }
@@ -23,7 +23,7 @@ app.use((req, res, next) => {
 
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000', 'https://tag.helgars.se'],
+    origin: ['http://localhost:3001', 'http://localhost:3000', 'https://tag.helgars.se'],
     methods: ['GET', 'POST', 'PUT']
   }
 });
