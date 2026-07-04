@@ -80,6 +80,38 @@ const db = new sqlite3.Database(dbPath, (err) => {
             console.log("Seeded initial teams and state.");
         }
       });
+
+      // Seed initial cards if not exists
+      db.get("SELECT count(*) as count FROM cards", (err, row) => {
+        if (row && row.count === 0) {
+            const destinations = [
+              "Spår 19 på Stockholms Central", "Mårten Trotzigs gränd", "Amfiteatern på Långholmen", 
+              "Norra Real", "Fatbursparken", "Karlbergs slottspark runsten", "Lilla mamsens bageri", 
+              "Hammarby sjöstad observatorium", "UMA-klistermärke på gångbron vid Lilla djurgårdsakademin", 
+              "Pizzeria Karavan", "Kaknästornet", "Arenatorget", "Kungseken Djurgården", 
+              "Edvard Andersons växthus", "Kronärtskocka Stora Coop Västberga", "Hoppbacken Enskede", 
+              "Legobutiken MOS", "Lekplatsen småkryp", "Järlas klubbstuga", "Lidingö Värmeverk", 
+              "Nacka Utsiktsplats", "Ålstensskogens Mälarvy", "Systembolaget Lidingö", 
+              "Ankomsthallen Bromma", "Coolt C-hus i Pungpinan", "Toppen av pyramiden i Johannisdalsparken", 
+              "Natti-natti 2023, sträcka 1, kontroll 2", "Gubbängens IP", "Rissneängarna Plaskdamm", "Nälsta Parkourpark"
+            ];
+            
+            const stmt = db.prepare("INSERT INTO cards (type, name, value, lat, lng, drawn) VALUES ('destination', ?, 10, 59.330, 18.060, 0)");
+            destinations.forEach(name => stmt.run(name));
+            stmt.finalize();
+
+            const challenges = [
+              { name: "Sjung en sång på torget", value: 2 },
+              { name: "Ta en selfie med en främling", value: 3 },
+              { name: "Åk tre stationer baklänges", value: 2 }
+            ];
+            const stmtCh = db.prepare("INSERT INTO cards (type, name, value, drawn) VALUES ('challenge', ?, ?, 0)");
+            challenges.forEach(ch => stmtCh.run(ch.name, ch.value));
+            stmtCh.finalize();
+
+            console.log("Seeded 30 destinations and default challenges.");
+        }
+      });
     });
   }
 });
