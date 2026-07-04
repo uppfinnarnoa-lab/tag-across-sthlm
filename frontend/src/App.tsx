@@ -7,6 +7,7 @@ import Feed from './pages/Feed';
 import Admin from './pages/Admin';
 import Landing from './pages/Landing';
 import Lobby from './pages/Lobby';
+import Install from './pages/Install';
 import './App.css';
 
 function App() {
@@ -35,6 +36,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/admin" element={<Admin />} />
+        <Route path="/install" element={<Install />} />
         
         <Route path="/" element={
           !player ? <Landing onJoin={setPlayer} /> : 

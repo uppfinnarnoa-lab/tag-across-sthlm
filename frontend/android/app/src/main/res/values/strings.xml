@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tåg Across STHLM</string>
+    <string name="title_activity_main">Tåg Across STHLM</string>
+    <string name="package_name">se.helgars.tagacross</string>
+    <string name="custom_url_scheme">se.helgars.tagacross</string>
+</resources>

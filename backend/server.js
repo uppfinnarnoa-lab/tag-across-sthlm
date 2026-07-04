@@ -125,6 +125,45 @@ app.post('/api/game/start', (req, res) => {
   });
 });
 
+app.post('/api/admin/gps_mode', (req, res) => {
+  const { mode } = req.body;
+  db.run("UPDATE global_state SET gps_mode = ? WHERE id = 1", [mode], () => {
+    io.emit('state_updated');
+    res.json({ success: true });
+  });
+});
+
+// OwnTracks Webhook (Tar emot positioner i bakgrunden utan att webbläsaren är igång!)
+app.post('/api/owntracks', (req, res) => {
+  const { _type, lat, lon, topic } = req.body;
+  
+  if (_type === 'location' && topic) {
+    // Topic = "tagacross/lag-rod", split by "/" to get "lag-rod"
+    const parts = topic.split('/');
+    const teamNameSlug = parts[parts.length - 1]; 
+    
+    // Convert slug back to team name or search
+    const searchMap: any = {
+      'lag-rod': 'Lag Röd',
+      'lag-bla': 'Lag Blå',
+      'lag-gron': 'Lag Grön'
+    };
+    
+    const actualTeamName = searchMap[teamNameSlug] || teamNameSlug;
+
+    db.get("SELECT id FROM teams WHERE name = ? COLLATE NOCASE", [actualTeamName], (err, team) => {
+      if (team) {
+        db.run("UPDATE teams SET lat = ?, lng = ? WHERE id = ?", [lat, lon, team.id], () => {
+          io.emit('position_update', { team_id: team.id, lat, lng: lon });
+        });
+      }
+    });
+  }
+  
+  // OwnTracks expects empty JSON or 200 OK
+  res.json([]);
+});
+
 // REST OF API
 app.get('/api/game/destinations', (req, res) => {
   db.all("SELECT id, name, lat, lng FROM cards WHERE type = 'destination'", [], (err, destinations) => {
@@ -135,6 +174,13 @@ app.get('/api/game/destinations', (req, res) => {
 app.get('/api/admin/cards', (req, res) => {
   db.all("SELECT * FROM cards", [], (err, cards) => {
     res.json({ cards });
+  });
+});
+
+app.post('/api/admin/cards', (req, res) => {
+  const { type, name, value, lat, lng } = req.body;
+  db.run("INSERT INTO cards (type, name, value, lat, lng, drawn) VALUES (?, ?, ?, ?, ?, 0)", [type, name, value, lat, lng], function () {
+    res.json({ success: true, id: this.lastID });
   });
 });
 

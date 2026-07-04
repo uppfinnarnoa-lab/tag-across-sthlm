@@ -67,6 +67,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         status TEXT DEFAULT 'waiting',
         game_pin TEXT,
+        gps_mode TEXT DEFAULT 'wakelock',
         lunch_break_active BOOLEAN DEFAULT 0,
         lunch_break_until DATETIME
       )`);
@@ -75,7 +76,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
       db.get("SELECT count(*) as count FROM teams", (err, row) => {
         if (row && row.count === 0) {
             db.run(`INSERT INTO teams (name, role) VALUES ('Lag Röd', 'chaser'), ('Lag Blå', 'chaser'), ('Lag Grön', 'runner')`);
-            db.run(`INSERT INTO global_state (id, status, game_pin) VALUES (1, 'waiting', NULL)`);
+            db.run(`INSERT INTO global_state (id, status, game_pin, gps_mode) VALUES (1, 'waiting', NULL, 'wakelock')`);
             console.log("Seeded initial teams and state.");
         }
       });

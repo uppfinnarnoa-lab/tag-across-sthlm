@@ -70,11 +70,20 @@ export default function Admin() {
 
   const handleSaveCard = async () => {
     if (!editingCard) return;
-    await fetch(`http://localhost:3001/api/admin/cards/${editingCard.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editingCard)
-    });
+    
+    if (editingCard.id) {
+      await fetch(`http://localhost:3001/api/admin/cards/${editingCard.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingCard)
+      });
+    } else {
+      await fetch(`http://localhost:3001/api/admin/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingCard)
+      });
+    }
     setEditingCard(null);
     fetchData();
   };
@@ -97,6 +106,21 @@ export default function Admin() {
       <div className="pixel-panel">
         <h2>Spelkontroll</h2>
         <p>Status: {gameState?.status} | PIN: <strong style={{color:'var(--sl-yellow)'}}>{gameState?.game_pin || 'Inget aktivt'}</strong></p>
+        
+        <div style={{ margin: '16px 0', padding: '8px', border: '1px solid #555' }}>
+          <label><strong>Välj GPS-läge:</strong></label>
+          <select 
+            value={gameState?.gps_mode || 'wakelock'} 
+            onChange={e => fetch(`http://localhost:3001/api/admin/gps_mode`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode: e.target.value }) }).then(fetchData)}
+            style={{ width: '100%', padding: '8px', marginTop: '8px', fontFamily: 'inherit', fontSize: '10px' }}
+          >
+            <option value="wakelock">1. WakeLock (Standard, Håll skärmen på)</option>
+            <option value="owntracks">2. OwnTracks Hack (Bakgrunds-GPS via extern App)</option>
+            <option value="native">3. Native App (Laddas ner via /install)</option>
+            <option value="off">4. Avstängd (Ingen live-positionering)</option>
+          </select>
+        </div>
+
         <button className="blue" onClick={handleCreateGame}>1. SKAPA NYTT SPEL</button>
         <button className="yellow" onClick={handleRandomize}>2. SLUMPA LAG</button>
         <button className="green" onClick={handleStartGame}>3. STARTA SPELET</button>
@@ -118,7 +142,7 @@ export default function Admin() {
 
       {editingCard ? (
         <div className="pixel-panel">
-          <h2>REDIGERA: {editingCard.name}</h2>
+          <h2>REDIGERA KORT</h2>
           <label>Namn:</label>
           <input value={editingCard.name} onChange={e => setEditingCard({...editingCard, name: e.target.value})} style={{ width: '100%', padding: '8px', marginBottom: '8px' }} />
           <label>Poäng/Värde:</label>
@@ -140,10 +164,15 @@ export default function Admin() {
       ) : (
         <div className="pixel-panel">
           <h2>KORT & PLATSER</h2>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <button className="blue" onClick={() => setEditingCard({ name: 'Ny Plats', type: 'destination', value: 10, lat: 59.33, lng: 18.06 })}>+ NY PLATS</button>
+            <button className="yellow" onClick={() => setEditingCard({ name: 'Ny Utmaning', type: 'challenge', value: 2 })}>+ NY UTMANING</button>
+          </div>
+          
           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
             {cards.map(card => (
               <div key={card.id} style={{ borderBottom: '1px solid #555', padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: '10px' }}><strong>{card.name}</strong></div>
+                <div style={{ fontSize: '10px' }}><strong>{card.name}</strong> ({card.type === 'destination' ? 'Plats' : 'Utmaning'})</div>
                 <button className="blue" style={{ width: 'auto', padding: '8px', margin: 0 }} onClick={() => setEditingCard(card)}>Edit</button>
               </div>
             ))}

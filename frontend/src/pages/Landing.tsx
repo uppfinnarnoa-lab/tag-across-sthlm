@@ -59,6 +59,7 @@ export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
       </div>
 
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
+        <button className="blue" onClick={() => navigate('/install')} style={{ width: 'auto', padding: '12px', marginRight: '8px' }}>APP INSTALL</button>
         <button className="yellow" onClick={() => navigate('/admin')} style={{ width: 'auto', padding: '12px' }}>DOMARE / ADMIN</button>
       </div>
     </>
