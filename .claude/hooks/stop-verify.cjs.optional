@@ -1,0 +1,47 @@
+// OPTIONAL Stop hook -- a deterministic quality gate that runs before Claude is allowed to
+// declare a task finished. Unlike a CLAUDE.md instruction ("run the build before finishing"),
+// this can't be skipped under context pressure -- it actually blocks completion by exiting 2
+// with a reason, which Claude Code surfaces back into the conversation.
+//
+// Only wire this up in settings.json if the project has a fast, reliable build/test command.
+// Rename to stop-verify.cjs (drop the .optional extension) and add:
+//
+// "Stop": [
+//   {
+//     "hooks": [
+//       {
+//         "type": "command",
+//         "command": "node .claude/hooks/stop-verify.cjs",
+//         "timeout": 120
+//       }
+//     ]
+//   }
+// ]
+//
+// IMPORTANT: keep the command here FAST (seconds, not minutes) -- this runs every time Claude
+// tries to stop. A slow full test suite belongs in CI, not here. Pick the cheapest check that
+// would actually catch a real regression (e.g. `tsc --noEmit`, `pytest -x -q tests/smoke`,
+// `go build ./...`) -- not the full suite.
+//
+// Claude Code auto-overrides after repeated consecutive Stop blocks (currently 8) so a flaky
+// check can't hard-lock a session -- but a hook that's flaky enough to hit that is a bug in
+// the hook, not a feature to rely on.
+const { execFileSync } = require("child_process");
+
+// EDIT THIS: replace with the project's actual fast verification command.
+const VERIFY_COMMAND = null; // e.g. ["npx", "tsc", "--noEmit"] or ["pytest", "-x", "-q", "tests/smoke"]
+
+if (!VERIFY_COMMAND) {
+  process.exit(0); // not configured yet -- no-op rather than blocking everything
+}
+
+try {
+  execFileSync(VERIFY_COMMAND[0], VERIFY_COMMAND.slice(1), { stdio: "pipe" });
+  process.exit(0);
+} catch (err) {
+  const output = `${err.stdout || ""}${err.stderr || ""}`.trim();
+  process.stderr.write(
+    `Verification failed -- fix before declaring this task done:\n${output || "(no output)"}\n`
+  );
+  process.exit(2);
+}

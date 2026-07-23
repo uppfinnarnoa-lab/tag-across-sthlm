@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/session-start-pull.cjs",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/block-secrets.cjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
