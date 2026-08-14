@@ -62,8 +62,11 @@ type error blocks the edit — fix it rather than working around the hook.
 ### 4. Verify in Docker before calling anything done
 
 - Start/restart the stack: `docker-compose up -d --build` (first run or after
-  dependency changes) or `docker-compose restart` (code-only changes, since
-  volumes hot-reload).
+  dependency changes) or `docker-compose restart` (code-only changes).
+- **`node --watch` does not pick up changes across the Windows bind mount.**
+  The frontend hot-reloads (`CHOKIDAR_USEPOLLING`), the backend does not — run
+  `docker-compose restart backend` after every edit under `backend/`, or you
+  will be testing the previous version and drawing wrong conclusions from it.
 - Confirm the feature actually works in the running Docker environment and
   that the app builds without errors before reporting done — don't just trust
   that the code "looks right."
@@ -82,12 +85,17 @@ Update documentation immediately after each task, before declaring it done:
 - No comments unless the WHY is non-obvious to a future reader.
 - No error handling for scenarios that cannot happen; validate only at real system boundaries.
 - Uploaded photo filenames are sanitized (`backend/server.js`, Multer
-  `filename` callback strips to `[a-zA-Z0-9.-]`) — never weaken this when
-  touching the upload path; it's the main defense against path traversal on
-  an endpoint with no real auth in front of it.
-- The `/api/auth/join` "auth" is a 4-digit game PIN, not real user
-  authentication — don't treat it as a security boundary or store anything
-  sensitive behind it.
+  `filename` callback strips to `[a-zA-Z0-9.-]`) and the extension is set from
+  the MIME type, not the client filename. The accepted types are an explicit
+  allowlist — **never widen it to `image/*`**, that lets `image/svg+xml`
+  through and an SVG served from our own origin is stored XSS.
+- **The actor always comes from the token, never from the request body.**
+  `req.player.team_id` decides which team a position or a claim belongs to.
+  Accepting `team_id` from the body is how position spoofing got in the first
+  time.
+- The 4-digit game PIN is a join code, not authentication — but it *is* the
+  key into the game, so it must never appear in an unauthenticated response.
+  Public callers get `/api/game/status`; everything else needs a token.
 
 ## Git Workflow
 
@@ -103,7 +111,15 @@ Update documentation immediately after each task, before declaring it done:
 ## Deployment
 
 Deploy target is an Nginx webserver, reached only by the user (no SSH access
-from here). After a change is verified in Docker and pushed:
+from here).
+
+Nginx must proxy `/api`, `/uploads` and `/socket.io` (with WebSocket upgrade)
+to the backend — the client only ever uses relative URLs, so nothing works
+without it. Required backend env vars in production: `ADMIN_PASSWORD` (the dev
+default is `Bosse` and the server warns when it's unset), `PUBLIC_URL`, and
+`ALLOWED_ORIGINS` if the Capacitor app is used. See `frontend/README.md`.
+
+After a change is verified in Docker and pushed:
 
 1. Generate the exact deploy command(s) for the change (rebuild/restart
    sequence appropriate to what changed — dependency changes need a full

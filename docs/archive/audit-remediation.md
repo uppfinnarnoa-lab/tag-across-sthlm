@@ -1,5 +1,18 @@
 # Implementationsplan: åtgärda hela auditen 2026-08-14
 
+> **Genomförd och arkiverad 2026-08-14.** Allt nedan är levererat och verifierat
+> i körande Docker, dels via API, dels i webbläsare.
+>
+> Två avvikelser från planen, båda för att undvika att skriva samma kod två
+> gånger: fas 4 (kortdata) landade tillsammans med fas 2 eftersom `database.js`
+> ändå skrevs om då, och fas 6:s backend-del (C2, C3) följde med samma
+> omskrivning. Fas 3 delades i två — uppladdningskedjan, och en härdning som
+> kom ur den automatiska säkerhetsgranskningen.
+>
+> Fyra fynd tillkom under arbetet och finns i avsnitt E i auditrapporten. Ett av
+> dem — att PIN-koden serverades utan autentisering — var allvarligare än något
+> den ursprungliga auditen hittade.
+
 Åtgärdar samtliga fynd i [`docs/audit_2026-08-14.md`](../audit_2026-08-14.md) —
 8 blockerare, 7 säkerhetsfynd, 12 korrekthetsfynd, 4 dokumentationsfynd.
 
