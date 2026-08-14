@@ -16,3 +16,6 @@ backend/uploads/
 # Local env overrides
 .env
 .env.local
+
+# Playwright-artefakter fran verifieringskorningar
+.playwright-mcp/

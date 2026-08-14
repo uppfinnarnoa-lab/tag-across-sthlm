@@ -1,34 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiFetch, socket } from '../api';
+import type { Player } from '../usePlayer';
 
-export default function Lobby({ player, onGameStart }: { player: any, onGameStart: () => void }) {
-  const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
+interface LobbyPlayer { id: number; name: string; team_id: number | null; team_name: string | null; }
 
-  const fetchLobby = async () => {
+export default function Lobby({ player }: { player: Player }) {
+  const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
+
+  const fetchLobby = useCallback(async () => {
     const res = await apiFetch('/api/lobby');
+    if (!res.ok) return;
     const data = await res.json();
     setLobbyPlayers(data.players || []);
-  };
+  }, []);
 
   useEffect(() => {
     fetchLobby();
-
-    socket.on('lobby_updated', () => {
-      fetchLobby();
-    });
-
-    socket.on('game_started', () => {
-      onGameStart();
-    });
-
-    return () => {
-      socket.off('lobby_updated');
-      socket.off('game_started');
-    };
-  }, []);
-
-  const me = lobbyPlayers.find(p => p.id === player.id);
-  const myTeam = me?.team_name || 'Väntar på lagindelning...';
+    // Avregistrera med handler-referensen, inte socket.off('lobby_updated') --
+    // den senare river även usePlayers lyssnare på samma event.
+    socket.on('lobby_updated', fetchLobby);
+    return () => { socket.off('lobby_updated', fetchLobby); };
+  }, [fetchLobby]);
 
   return (
     <div style={{ textAlign: 'center' }}>
@@ -37,7 +29,9 @@ export default function Lobby({ player, onGameStart }: { player: any, onGameStar
       <div className="pixel-panel">
         <h2>Välkommen, {player.name}!</h2>
         <p>Ditt lag:</p>
-        <h3 style={{ color: 'var(--sl-yellow)', fontSize: '20px' }}>{myTeam}</h3>
+        <h3 style={{ color: 'var(--sl-yellow)', fontSize: '20px' }}>
+          {player.team_name || 'Väntar på lagindelning...'}
+        </h3>
         <p style={{ fontSize: '10px', marginTop: '16px' }} className="bounce">Väntar på att spelet ska starta...</p>
       </div>
 

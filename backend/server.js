@@ -255,6 +255,13 @@ app.post('/api/game/start', requireAdmin, wrap(async (req, res) => {
   res.json({ success: true, head_start_until: headStartUntil });
 }));
 
+// Domaren behöver lobbyn för att dela in lag, men har inget spelartoken.
+app.get('/api/admin/lobby', requireAdmin, wrap(async (req, res) => {
+  const players = await all(`SELECT players.id, players.name, teams.id as team_id, teams.name as team_name
+    FROM players LEFT JOIN teams ON players.team_id = teams.id`);
+  res.json({ players });
+}));
+
 app.get('/api/admin/cards', requireAdmin, wrap(async (req, res) => {
   res.json({ cards: await all("SELECT * FROM cards") });
 }));

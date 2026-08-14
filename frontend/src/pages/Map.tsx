@@ -1,100 +1,115 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import markerIconUrl from 'leaflet/dist/images/marker-icon.png';
 import { apiFetch, socket } from '../api';
+import { usePlayer } from '../usePlayer';
 
-// Custom ikoner
-const markerIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
+// Ikonerna hämtades tidigare från unpkg.com vid varje sidladdning. Under en match
+// på mobildata är det en extern beroendepunkt som inte behöver finnas -- och den
+// läckte spelarnas IP-adresser till en tredje part.
+const markerIcon = new L.Icon({ iconUrl: markerIconUrl, iconSize: [25, 41], iconAnchor: [12, 41] });
 const destIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  iconUrl: markerIconUrl,
   iconSize: [25, 41],
   iconAnchor: [12, 41],
-  className: 'destination-marker' // opacity i css
+  className: 'destination-marker'
 });
 
 interface Destination { id: number; name: string; lat: number; lng: number; }
+interface Team { id: number; name: string; role: string; lat: number | null; lng: number | null; }
 
 export default function MapView() {
-  const [positions, setPositions] = useState<{ [teamId: number]: [number, number] }>({});
+  const { player } = usePlayer();
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [positions, setPositions] = useState<Record<number, [number, number]>>({});
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
-  const [gpsMode, setGpsMode] = useState<string>('wakelock');
-  const wakeLock = useRef<any>(null);
+  const [gpsMode, setGpsMode] = useState('wakelock');
+  const wakeLock = useRef<WakeLockSentinel | null>(null);
+
+  const teamId = player?.team_id ?? null;
+
+  const fetchState = useCallback(async () => {
+    const res = await apiFetch('/api/game/state');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.state) setGpsMode(data.state.gps_mode);
+    if (data.teams) {
+      setTeams(data.teams);
+      const next: Record<number, [number, number]> = {};
+      data.teams.forEach((t: Team) => { if (t.lat && t.lng) next[t.id] = [t.lat, t.lng]; });
+      setPositions(next);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchState = async () => {
-      const res = await apiFetch('/api/game/state');
-      const data = await res.json();
-      if (data.state) setGpsMode(data.state.gps_mode);
-      
-      const posMap: any = {};
-      if (data.teams) {
-        data.teams.forEach((t: any) => { if (t.lat && t.lng) posMap[t.id] = [t.lat, t.lng]; });
-        setPositions(posMap);
-      }
-    };
     fetchState();
-
     apiFetch('/api/game/destinations')
-      .then(res => res.json())
-      .then(data => setDestinations(data.destinations));
+      .then(res => (res.ok ? res.json() : { destinations: [] }))
+      .then(data => setDestinations(data.destinations || []));
 
-    socket.on('position_update', (data: any) => {
+    const onPosition = (data: { team_id: number; lat: number; lng: number }) => {
       setPositions(prev => ({ ...prev, [data.team_id]: [data.lat, data.lng] }));
-    });
-
-    let watchId: number;
-    const team = JSON.parse(localStorage.getItem('player') || '{}');
-
-    // Starta tracking baserat på gps_mode
-    setTimeout(() => {
-      if (team.team_id && (gpsMode === 'wakelock' || gpsMode === 'native')) {
-        // För native kan vi lägga in capacitor anropet här framöver
-        watchId = navigator.geolocation.watchPosition(
-          (pos) => {
-            const { latitude, longitude } = pos.coords;
-            apiFetch('/api/game/position', {
-              method: 'POST',
-              body: JSON.stringify({ lat: latitude, lng: longitude })
-            });
-          },
-          (err) => console.error(err),
-          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-        );
-      }
-    }, 1000);
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator && wakeLockEnabled && gpsMode === 'wakelock') {
-          wakeLock.current = await (navigator as any).wakeLock.request('screen');
-        }
-      } catch (err) {
-        console.error('WakeLock misslyckades:', err);
-      }
     };
-    if (gpsMode === 'wakelock') requestWakeLock();
+    socket.on('position_update', onPosition);
+    socket.on('state_updated', fetchState);
+    return () => {
+      socket.off('position_update', onPosition);
+      socket.off('state_updated', fetchState);
+    };
+  }, [fetchState]);
+
+  // Egen effekt, och watchId hålls i en ref. Tidigare tilldelades den inuti en
+  // setTimeout medan städfunktionen läste den direkt -- den var alltid undefined
+  // vid städning, så clearWatch kördes aldrig och varje lägesbyte startade
+  // ytterligare en watcher som fortsatte posta positioner.
+  useEffect(() => {
+    if (!teamId || (gpsMode !== 'wakelock' && gpsMode !== 'native')) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        apiFetch('/api/game/position', {
+          method: 'POST',
+          body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        });
+      },
+      (err) => console.error('Positionsfel:', err.message),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [teamId, gpsMode]);
+
+  useEffect(() => {
+    if (gpsMode !== 'wakelock' || !wakeLockEnabled || !('wakeLock' in navigator)) return;
+
+    let released = false;
+    navigator.wakeLock.request('screen')
+      .then(sentinel => {
+        if (released) return sentinel.release();
+        wakeLock.current = sentinel;
+      })
+      .catch(err => console.error('WakeLock misslyckades:', err));
 
     return () => {
-      socket.off('position_update');
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-      if (wakeLock.current) { wakeLock.current.release(); wakeLock.current = null; }
+      released = true;
+      wakeLock.current?.release();
+      wakeLock.current = null;
     };
-  }, [wakeLockEnabled, gpsMode]);
+  }, [gpsMode, wakeLockEnabled]);
+
+  const teamName = (id: string) => teams.find(t => t.id === Number(id))?.name || `Lag ${id}`;
 
   return (
     <>
       <div style={{ textAlign: 'center', marginBottom: '16px' }}>
         <h1>LIVEKARTA</h1>
-        
+
         {gpsMode === 'wakelock' && (
-          <button className={wakeLockEnabled ? "yellow" : "blue"} onClick={() => setWakeLockEnabled(!wakeLockEnabled)} style={{ width: 'auto', padding: '8px', fontSize: '10px' }}>
-            {wakeLockEnabled ? "WakeLock PÅ (Kräver mer batteri)" : "WakeLock AV (Sparar batteri)"}
+          <button className={wakeLockEnabled ? 'yellow' : 'blue'} onClick={() => setWakeLockEnabled(!wakeLockEnabled)} style={{ width: 'auto', padding: '8px', fontSize: '10px' }}>
+            {wakeLockEnabled ? 'WakeLock PÅ (Kräver mer batteri)' : 'WakeLock AV (Sparar batteri)'}
           </button>
         )}
 
@@ -114,14 +129,14 @@ export default function MapView() {
       <div className="pixel-panel" style={{ padding: '4px', height: '400px' }}>
         <MapContainer center={[59.3293, 18.0686]} zoom={11} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          
+
           {destinations.map(d => (
             d.lat ? <Marker key={`dest-${d.id}`} position={[d.lat, d.lng]} icon={destIcon}><Popup>{d.name}</Popup></Marker> : null
           ))}
 
-          {Object.entries(positions).map(([teamId, coords]) => (
-            <Marker key={teamId} position={coords as [number, number]} icon={markerIcon}>
-              <Popup>Lag {teamId}</Popup>
+          {Object.entries(positions).map(([id, coords]) => (
+            <Marker key={id} position={coords} icon={markerIcon}>
+              <Popup>{teamName(id)}</Popup>
             </Marker>
           ))}
         </MapContainer>

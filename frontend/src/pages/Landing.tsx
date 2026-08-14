@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiFetch } from '../api';
+import { apiFetch, setToken } from '../api';
 
-export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
+export default function Landing({ onJoin }: { onJoin: () => void }) {
   const [pin, setPin] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+
   const navigate = useNavigate();
 
   const handleJoin = async () => {
@@ -15,15 +16,16 @@ export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
         body: JSON.stringify({ pin, name })
       });
       const data = await res.json();
-      
+
       if (!res.ok) {
         setError(data.error);
-      } else {
-        localStorage.setItem('player', JSON.stringify(data.player));
-        localStorage.setItem('game_pin', pin);
-        onJoin(data.player);
+        return;
       }
-    } catch (e) {
+      // Token är spelarens identitet. Laget kommer från /api/auth/me när domaren
+      // delat in lagen, inte härifrån.
+      setToken(data.token);
+      onJoin();
+    } catch {
       setError('Kunde inte ansluta till servern.');
     }
   };
@@ -38,18 +40,19 @@ export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
       <div className="pixel-panel" style={{ textAlign: 'center' }}>
         <h2>GÅ MED I SPEL</h2>
         {error && <p style={{ color: 'var(--sl-red)' }}>{error}</p>}
-        
-        <input 
-          type="text" 
-          placeholder="SPEL-PIN (4 siffror)" 
+
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="SPEL-PIN (4 siffror)"
           value={pin}
           onChange={(e) => setPin(e.target.value)}
           style={{ width: '100%', padding: '16px', fontSize: '16px', marginBottom: '16px', fontFamily: 'inherit', textAlign: 'center' }}
         />
-        
-        <input 
-          type="text" 
-          placeholder="DITT NAMN" 
+
+        <input
+          type="text"
+          placeholder="DITT NAMN"
           value={name}
           onChange={(e) => setName(e.target.value)}
           style={{ width: '100%', padding: '16px', fontSize: '16px', marginBottom: '16px', fontFamily: 'inherit', textAlign: 'center' }}
