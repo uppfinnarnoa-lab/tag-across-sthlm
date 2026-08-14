@@ -11,7 +11,9 @@ services:
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
-      - VITE_API_URL=http://localhost:3002
+      # Proxymål för Vite. Klientkoden adresserar alltid same origin, så ingen
+      # VITE_API_URL behövs här -- den är bara till för Capacitor-bygget.
+      - BACKEND_URL=http://backend:3002
     depends_on:
       - backend
 

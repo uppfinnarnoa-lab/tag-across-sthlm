@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
-import io from 'socket.io-client';
-
-const socket = io('http://localhost:3002');
+import { apiFetch, socket } from '../api';
 
 export default function Lobby({ player, onGameStart }: { player: any, onGameStart: () => void }) {
   const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
-  
+
   const fetchLobby = async () => {
-    const res = await fetch('http://localhost:3002/api/lobby');
+    const res = await apiFetch('/api/lobby');
     const data = await res.json();
     setLobbyPlayers(data.players || []);
   };
@@ -35,7 +33,7 @@ export default function Lobby({ player, onGameStart }: { player: any, onGameStar
   return (
     <div style={{ textAlign: 'center' }}>
       <h1>VÄNTRUM</h1>
-      
+
       <div className="pixel-panel">
         <h2>Välkommen, {player.name}!</h2>
         <p>Ditt lag:</p>
@@ -48,7 +46,7 @@ export default function Lobby({ player, onGameStart }: { player: any, onGameStar
         <ul style={{ listStyle: 'none', padding: 0, textAlign: 'left' }}>
           {lobbyPlayers.map(p => (
             <li key={p.id} style={{ borderBottom: '1px solid #555', padding: '8px 0', fontSize: '12px' }}>
-              <strong>{p.name}</strong> 
+              <strong>{p.name}</strong>
               <span style={{ float: 'right', color: p.team_name ? 'white' : 'gray' }}>
                 {p.team_name || 'Inget lag'}
               </span>

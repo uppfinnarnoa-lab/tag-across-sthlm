@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { apiFetch } from '../api';
 
 interface Card {
   id: number;
@@ -14,9 +15,8 @@ export default function Play() {
 
   const drawCard = async (type: 'destination' | 'challenge') => {
     try {
-      const res = await fetch('http://localhost:3002/api/cards/draw', {
+      const res = await apiFetch('/api/cards/draw', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type })
       });
       const data = await res.json();

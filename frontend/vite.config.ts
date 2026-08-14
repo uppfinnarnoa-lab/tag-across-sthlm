@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// I Docker når frontend-containern backend på tjänstnamnet. Körs Vite direkt på
+// värden går den mot localhost i stället.
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:3002'
+
 export default defineConfig({
   plugins: [
     react(),
@@ -33,6 +37,14 @@ export default defineConfig({
   ],
   server: {
     host: true,
-    port: 3001
+    port: 3001,
+    // Klienten adresserar alltid same origin. Proxyn här speglar det Nginx gör
+    // i drift, så samma frontendkod fungerar i dev, på en telefon över LAN och
+    // bakom Nginx -- utan CORS.
+    proxy: {
+      '/api': { target: backendUrl, changeOrigin: true },
+      '/uploads': { target: backendUrl, changeOrigin: true },
+      '/socket.io': { target: backendUrl, ws: true }
+    }
   }
 })

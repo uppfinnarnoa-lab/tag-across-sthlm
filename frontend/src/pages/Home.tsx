@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { apiFetch } from '../api';
 
 interface Team {
   id: number;
@@ -12,7 +13,7 @@ export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
 
   useEffect(() => {
-    fetch('http://localhost:3002/api/game/state')
+    apiFetch('/api/game/state')
       .then(res => res.json())
       .then(data => setTeams(data.teams || []))
       .catch(console.error);

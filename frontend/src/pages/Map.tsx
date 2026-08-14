@@ -1,10 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import io from 'socket.io-client';
 import L from 'leaflet';
-
-const socket = io('http://localhost:3002');
+import { apiFetch, socket } from '../api';
 
 // Custom ikoner
 const markerIcon = new L.Icon({
@@ -30,7 +28,7 @@ export default function MapView() {
 
   useEffect(() => {
     const fetchState = async () => {
-      const res = await fetch('http://localhost:3002/api/game/state');
+      const res = await apiFetch('/api/game/state');
       const data = await res.json();
       if (data.state) setGpsMode(data.state.gps_mode);
       
@@ -42,7 +40,7 @@ export default function MapView() {
     };
     fetchState();
 
-    fetch('http://localhost:3002/api/game/destinations')
+    apiFetch('/api/game/destinations')
       .then(res => res.json())
       .then(data => setDestinations(data.destinations));
 
@@ -60,10 +58,9 @@ export default function MapView() {
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             const { latitude, longitude } = pos.coords;
-            fetch('http://localhost:3002/api/game/position', {
+            apiFetch('/api/game/position', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ team_id: team.team_id, lat: latitude, lng: longitude })
+              body: JSON.stringify({ lat: latitude, lng: longitude })
             });
           },
           (err) => console.error(err),

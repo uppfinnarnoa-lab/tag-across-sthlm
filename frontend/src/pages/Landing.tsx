@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiFetch } from '../api';
 
 export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
   const [pin, setPin] = useState('');
@@ -9,9 +10,8 @@ export default function Landing({ onJoin }: { onJoin: (player: any) => void }) {
 
   const handleJoin = async () => {
     try {
-      const res = await fetch('http://localhost:3002/api/auth/join', {
+      const res = await apiFetch('/api/auth/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin, name })
       });
       const data = await res.json();

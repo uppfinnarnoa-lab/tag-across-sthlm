@@ -8,6 +8,7 @@ import Admin from './pages/Admin';
 import Landing from './pages/Landing';
 import Lobby from './pages/Lobby';
 import Install from './pages/Install';
+import { apiFetch } from './api';
 import './App.css';
 
 function App() {
@@ -16,7 +17,7 @@ function App() {
 
   const fetchState = async () => {
     try {
-      const res = await fetch('http://localhost:3002/api/game/state');
+      const res = await apiFetch('/api/game/state');
       const data = await res.json();
       if (data.state) setGameState(data.state.status);
     } catch(e) {}
