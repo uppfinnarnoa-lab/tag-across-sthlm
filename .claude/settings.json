@@ -22,6 +22,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-edit-typecheck.cjs",
+            "timeout": 120
+          }
+        ]
+      }
     ]
   }
 }

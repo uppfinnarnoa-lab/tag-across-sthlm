@@ -48,17 +48,16 @@ tree (other projects under `Kodprojekt/`, Downloads, Desktop root, etc.)
 without the user's explicit, per-instance permission. Standing user
 preference across all projects in this `Kodprojekt/` folder.
 
-### 3. Frontend has 6 pre-existing TypeScript errors — don't add more, but don't assume you introduced these
+### 3. Frontend typechecks clean — keep it that way
 
-`frontend/src/pages/Admin.tsx` and `frontend/src/pages/Map.tsx` currently
-fail `tsc -b --noEmit` (missing `@types/leaflet`, `MapContainer`/`Marker`
-prop typing issues with react-leaflet). A `.claude/hooks/post-edit-typecheck.cjs`
-exists (adapted from the template to run from `frontend/`, since that's
-where the TS project actually lives) but is **not yet wired into
-`settings.json`** — turning it on today would fire on every edit anywhere in
-`frontend/`, drowning real new errors in the 6 pre-existing ones. Fix the
-pre-existing errors first, then add the `PostToolUse` block (see the
-comment at the top of that hook file) to get real per-edit enforcement.
+`npx tsc -b --noEmit` from `frontend/` gives **0 errors**. The 6 errors this
+rule used to describe were all one root cause (missing `@types/leaflet`, which
+made `react-leaflet` v5 degrade `MapContainerProps`/`MarkerProps`); installing
+that package fixed all six.
+
+`.claude/hooks/post-edit-typecheck.cjs` is now wired into `settings.json` as a
+`PostToolUse` hook and runs on every `.ts`/`.tsx` edit under `frontend/`. A new
+type error blocks the edit — fix it rather than working around the hook.
 
 ### 4. Verify in Docker before calling anything done
 

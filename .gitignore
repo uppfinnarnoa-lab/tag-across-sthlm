@@ -3,3 +3,16 @@
 
 # OS
 .DS_Store
+
+# Dependencies
+node_modules/
+
+# Backend runtime state -- SQLite-databasen och spelarnas uppladdade foton.
+# Dessa katalogerna är tomma så länge backend bara kör i Docker (volym), men
+# fylls direkt om den körs på värden.
+backend/data/
+backend/uploads/
+
+# Local env overrides
+.env
+.env.local
