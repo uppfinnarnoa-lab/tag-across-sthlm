@@ -1,119 +1,153 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { destinations, challenges } = require('./cards');
 
-const dbPath = path.join(__dirname, 'data', 'game.db');
-const dataDir = path.join(__dirname, 'data');
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+const dbPath = path.join(dataDir, 'game.db');
 
-if (!fs.existsSync(dataDir)){
-    fs.mkdirSync(dataDir);
-}
+fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database', err.message);
-  } else {
-    console.log('Connected to the SQLite database.');
-    
-    db.serialize(() => {
-      // Teams table extended with game logic
-      db.run(`CREATE TABLE IF NOT EXISTS teams (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        points REAL DEFAULT 0,
-        role TEXT DEFAULT 'chaser',
-        lat REAL,
-        lng REAL,
-        current_transport TEXT,
-        transport_start_time DATETIME,
-        head_start_until DATETIME,
-        current_destination_id INTEGER
-      )`);
+const db = new sqlite3.Database(dbPath);
 
-      // Players table for the Lobby system
-      db.run(`CREATE TABLE IF NOT EXISTS players (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        team_id INTEGER,
-        socket_id TEXT,
-        last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (team_id) REFERENCES teams(id)
-      )`);
-
-      // Cards table (Destinations have coordinates)
-      db.run(`CREATE TABLE IF NOT EXISTS cards (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL, 
-        name TEXT NOT NULL,
-        value REAL NOT NULL, 
-        lat REAL,
-        lng REAL,
-        drawn BOOLEAN DEFAULT 0
-      )`);
-
-      // Feed table for TAGEN! and Claims
-      db.run(`CREATE TABLE IF NOT EXISTS feed (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        team_id INTEGER,
-        player_name TEXT,
-        type TEXT,
-        message TEXT,
-        image_url TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`);
-
-      // Global Game State
-      db.run(`CREATE TABLE IF NOT EXISTS global_state (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        status TEXT DEFAULT 'waiting',
-        game_pin TEXT,
-        gps_mode TEXT DEFAULT 'wakelock',
-        lunch_break_active BOOLEAN DEFAULT 0,
-        lunch_break_until DATETIME
-      )`);
-
-      // Seed initial teams if not exists
-      db.get("SELECT count(*) as count FROM teams", (err, row) => {
-        if (row && row.count === 0) {
-            db.run(`INSERT INTO teams (name, role) VALUES ('Lag Röd', 'chaser'), ('Lag Blå', 'chaser'), ('Lag Grön', 'runner')`);
-            db.run(`INSERT INTO global_state (id, status, game_pin, gps_mode) VALUES (1, 'waiting', NULL, 'wakelock')`);
-            console.log("Seeded initial teams and state.");
-        }
-      });
-
-      // Seed initial cards if not exists
-      db.get("SELECT count(*) as count FROM cards", (err, row) => {
-        if (row && row.count === 0) {
-            const destinations = [
-              "Spår 19 på Stockholms Central", "Mårten Trotzigs gränd", "Amfiteatern på Långholmen", 
-              "Norra Real", "Fatbursparken", "Karlbergs slottspark runsten", "Lilla mamsens bageri", 
-              "Hammarby sjöstad observatorium", "UMA-klistermärke på gångbron vid Lilla djurgårdsakademin", 
-              "Pizzeria Karavan", "Kaknästornet", "Arenatorget", "Kungseken Djurgården", 
-              "Edvard Andersons växthus", "Kronärtskocka Stora Coop Västberga", "Hoppbacken Enskede", 
-              "Legobutiken MOS", "Lekplatsen småkryp", "Järlas klubbstuga", "Lidingö Värmeverk", 
-              "Nacka Utsiktsplats", "Ålstensskogens Mälarvy", "Systembolaget Lidingö", 
-              "Ankomsthallen Bromma", "Coolt C-hus i Pungpinan", "Toppen av pyramiden i Johannisdalsparken", 
-              "Natti-natti 2023, sträcka 1, kontroll 2", "Gubbängens IP", "Rissneängarna Plaskdamm", "Nälsta Parkourpark"
-            ];
-            
-            const stmt = db.prepare("INSERT INTO cards (type, name, value, lat, lng, drawn) VALUES ('destination', ?, 10, 59.330, 18.060, 0)");
-            destinations.forEach(name => stmt.run(name));
-            stmt.finalize();
-
-            const challenges = [
-              { name: "Sjung en sång på torget", value: 2 },
-              { name: "Ta en selfie med en främling", value: 3 },
-              { name: "Åk tre stationer baklänges", value: 2 }
-            ];
-            const stmtCh = db.prepare("INSERT INTO cards (type, name, value, drawn) VALUES ('challenge', ?, ?, 0)");
-            challenges.forEach(ch => stmtCh.run(ch.name, ch.value));
-            stmtCh.finalize();
-
-            console.log("Seeded 30 destinations and default challenges.");
-        }
-      });
-    });
-  }
+// Promise-omslag. Rutterna i server.js byggde tidigare djupa callback-pyramider
+// där fel tystades och svar ibland aldrig skickades -- med de här kan de skrivas
+// sekventiellt och låta ett kastat fel bubbla till felhanteraren.
+const run = (sql, params = []) => new Promise((resolve, reject) => {
+  db.run(sql, params, function (err) { err ? reject(err) : resolve(this); });
+});
+const get = (sql, params = []) => new Promise((resolve, reject) => {
+  db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+});
+const all = (sql, params = []) => new Promise((resolve, reject) => {
+  db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
 });
 
-module.exports = db;
+const newKey = () => crypto.randomBytes(24).toString('hex');
+
+async function ensureColumn(table, column, definition) {
+  const cols = await all(`PRAGMA table_info(${table})`);
+  if (!cols.some(c => c.name === column)) {
+    await run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+async function createTables() {
+  await run(`CREATE TABLE IF NOT EXISTS teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    points REAL DEFAULT 0,
+    role TEXT DEFAULT 'chaser',
+    lat REAL,
+    lng REAL,
+    current_transport TEXT,
+    transport_start_time DATETIME,
+    head_start_until DATETIME,
+    current_destination_id INTEGER
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS players (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    team_id INTEGER,
+    socket_id TEXT,
+    last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (team_id) REFERENCES teams(id)
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    value REAL NOT NULL,
+    lat REAL,
+    lng REAL,
+    drawn BOOLEAN DEFAULT 0
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS feed (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER,
+    player_name TEXT,
+    type TEXT,
+    message TEXT,
+    image_url TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS global_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status TEXT DEFAULT 'waiting',
+    game_pin TEXT,
+    gps_mode TEXT DEFAULT 'wakelock',
+    lunch_break_active BOOLEAN DEFAULT 0,
+    lunch_break_until DATETIME
+  )`);
+}
+
+async function migrate() {
+  await ensureColumn('players', 'token', 'TEXT');
+  await ensureColumn('teams', 'track_key', 'TEXT');
+  await ensureColumn('teams', 'current_challenge_id', 'INTEGER');
+  await ensureColumn('cards', 'description', 'TEXT');
+  await ensureColumn('global_state', 'lunch_break_done', 'BOOLEAN DEFAULT 0');
+  await ensureColumn('global_state', 'game_ends_at', 'DATETIME');
+
+  // Lag som fanns före track_key-kolumnen behöver en nyckel för OwnTracks.
+  const keyless = await all("SELECT id FROM teams WHERE track_key IS NULL");
+  for (const team of keyless) {
+    await run("UPDATE teams SET track_key = ? WHERE id = ?", [newKey(), team.id]);
+  }
+}
+
+async function seed() {
+  const teamCount = await get("SELECT count(*) as count FROM teams");
+  if (teamCount.count === 0) {
+    for (const [name, role] of [['Lag Röd', 'chaser'], ['Lag Blå', 'chaser'], ['Lag Grön', 'runner']]) {
+      await run("INSERT INTO teams (name, role, track_key) VALUES (?, ?, ?)", [name, role, newKey()]);
+    }
+  }
+
+  const stateRow = await get("SELECT count(*) as count FROM global_state");
+  if (stateRow.count === 0) {
+    await run("INSERT INTO global_state (id, status, gps_mode) VALUES (1, 'waiting', 'wakelock')");
+  }
+
+  for (const d of destinations) {
+    // Reparerar även befintliga rader. En tidigare seed lade in samtliga 30
+    // destinationer på Stockholms Central med värde 10 -- den här UPSERT-en
+    // rättar dem utan att databasen behöver återställas.
+    const existing = await get("SELECT id FROM cards WHERE type = 'destination' AND name = ?", [d.name]);
+    if (existing) {
+      await run("UPDATE cards SET value = ?, lat = ?, lng = ? WHERE id = ?", [d.value, d.lat, d.lng, existing.id]);
+    } else {
+      await run("INSERT INTO cards (type, name, value, lat, lng, drawn) VALUES ('destination', ?, ?, ?, ?, 0)",
+        [d.name, d.value, d.lat, d.lng]);
+    }
+  }
+
+  for (const c of challenges) {
+    const existing = await get("SELECT id FROM cards WHERE type = 'challenge' AND name = ?", [c.name]);
+    if (existing) {
+      await run("UPDATE cards SET value = ?, description = ? WHERE id = ?", [c.value, c.description, existing.id]);
+    } else {
+      await run("INSERT INTO cards (type, name, value, description, drawn) VALUES ('challenge', ?, ?, ?, 0)",
+        [c.name, c.value, c.description]);
+    }
+  }
+
+  // Platshållarutmaningarna från den ursprungliga seeden finns inte i
+  // regelboken och ska bort när de riktiga 22 är på plats.
+  await run("DELETE FROM cards WHERE type = 'challenge' AND name NOT IN (" +
+    challenges.map(() => '?').join(',') + ")", challenges.map(c => c.name));
+}
+
+const ready = (async () => {
+  await createTables();
+  await migrate();
+  await seed();
+  console.log(`Databas klar: ${destinations.length} destinationer, ${challenges.length} utmaningar.`);
+})();
+
+module.exports = { db, run, get, all, ready, newKey };

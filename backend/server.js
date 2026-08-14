@@ -1,242 +1,293 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const multer = require('multer');
-const path = require('path');
-const db = require('./database');
+
+const { run, get, all, ready: dbReady, newKey } = require('./database');
+const auth = require('./auth');
 
 const app = express();
 const server = http.createServer(app);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Klienten pratar med same origin (Vite-proxy i dev, Nginx i drift), så CORS
+// behövs bara för Capacitor-appen som laddas från file:// och därför skickar en
+// främmande origin. Wildcard är inte ett alternativ: utan autentisering på
+// /api/admin/* kunde vilken sida som helst nollställa ett pågående spel.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ||
+  'http://localhost:3001,capacitor://localhost,ionic://localhost').split(',').map(o => o.trim());
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT']
-  }
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST', 'PUT'] }
 });
 
-// Configure Multer for uploads
+// Uppladdningar
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+const uploadDir = process.env.UPLOAD_DIR || path.join(dataDir, 'uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, '/app/data/uploads/'),
+  destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
+    // Enda försvaret mot path traversal på en rutt utan riktig auth framför sig.
     const cleanName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
     cb(null, Date.now() + '-' + cleanName);
   }
 });
-const upload = multer({ 
-  storage, 
-  limits: { fileSize: 25 * 1024 * 1024 } 
+const upload = multer({
+  storage,
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image|video)\//.test(file.mimetype);
+    cb(ok ? null : new Error('Endast bilder och filmer får laddas upp'), ok);
+  }
 });
 
-// LOBBY & AUTH API
+app.use('/uploads', express.static(uploadDir));
 
-app.get('/api/game/state', (req, res) => {
-  db.all("SELECT id, name, points, role, lat, lng FROM teams ORDER BY points DESC", [], (err, teams) => {
-    if (err) return res.status(500).json({ error: err.message });
-    db.get("SELECT * FROM global_state WHERE id = 1", (err, state) => {
-      res.json({ teams, state });
-    });
-  });
-});
+// Låter rutterna skrivas sekventiellt och skickar fel till felhanteraren i
+// stället för att tysta dem eller lämna requesten hängande.
+const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-app.post('/api/admin/create_game', (req, res) => {
-  const pin = Math.floor(1000 + Math.random() * 9000).toString();
-  db.run("DELETE FROM players", [], () => {
-    db.run("UPDATE teams SET points = 0, lat = NULL, lng = NULL", [], () => {
-      db.run("UPDATE cards SET drawn = 0", [], () => {
-        db.run("UPDATE global_state SET status = 'lobby', game_pin = ? WHERE id = 1", [pin], () => {
-          io.emit('lobby_updated');
-          res.json({ success: true, game_pin: pin });
-        });
-      });
-    });
-  });
-});
+const requirePlayer = wrap(auth.requirePlayer);
+const requireRunner = wrap(auth.requireRunner);
+const requireAdmin = wrap(auth.requireAdmin);
 
-app.post('/api/auth/join', (req, res) => {
+// ---------------------------------------------------------------- Speltillstånd
+
+app.get('/api/game/state', wrap(async (req, res) => {
+  const teams = await all("SELECT id, name, points, role, lat, lng, head_start_until FROM teams ORDER BY points DESC");
+  const state = await get("SELECT id, status, game_pin, gps_mode, lunch_break_active, lunch_break_until, game_ends_at FROM global_state WHERE id = 1");
+  res.json({ teams, state });
+}));
+
+app.get('/api/game/destinations', wrap(async (req, res) => {
+  const destinations = await all("SELECT id, name, lat, lng FROM cards WHERE type = 'destination'");
+  res.json({ destinations });
+}));
+
+app.get('/api/lobby', wrap(async (req, res) => {
+  const players = await all(`SELECT players.id, players.name, teams.id as team_id, teams.name as team_name
+    FROM players LEFT JOIN teams ON players.team_id = teams.id`);
+  res.json({ players });
+}));
+
+// ------------------------------------------------------------------------ Auth
+
+app.post('/api/auth/join', wrap(async (req, res) => {
   const { pin, name } = req.body;
   if (!pin || !name) return res.status(400).json({ error: 'Data saknas' });
 
-  db.get("SELECT game_pin, status FROM global_state WHERE id = 1", (err, state) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (state.game_pin !== pin) return res.status(401).json({ error: 'Fel PIN-kod' });
-    if (state.status !== 'lobby' && state.status !== 'waiting') return res.status(400).json({ error: 'Spelet har redan startat' });
-
-    db.run("INSERT INTO players (name) VALUES (?)", [name], function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      const playerId = this.lastID;
-      io.emit('lobby_updated');
-      res.json({ success: true, player: { id: playerId, name } });
-    });
-  });
-});
-
-app.get('/api/lobby', (req, res) => {
-  db.all("SELECT players.id, players.name, teams.id as team_id, teams.name as team_name FROM players LEFT JOIN teams ON players.team_id = teams.id", [], (err, players) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ players });
-  });
-});
-
-app.post('/api/admin/assign_team', (req, res) => {
-  const { player_id, team_id } = req.body;
-  db.run("UPDATE players SET team_id = ? WHERE id = ?", [team_id, player_id], () => {
-    io.emit('lobby_updated');
-    res.json({ success: true });
-  });
-});
-
-app.post('/api/admin/randomize_teams', (req, res) => {
-  db.all("SELECT id FROM players", [], (err, players) => {
-    db.all("SELECT id FROM teams", [], (err, teams) => {
-      let shuffled = players.sort(() => 0.5 - Math.random());
-      let queries = 0;
-      shuffled.forEach((p, index) => {
-        const teamId = teams[index % teams.length].id;
-        db.run("UPDATE players SET team_id = ? WHERE id = ?", [teamId, p.id], () => {
-          queries++;
-          if (queries === shuffled.length) {
-            io.emit('lobby_updated');
-            res.json({ success: true });
-          }
-        });
-      });
-    });
-  });
-});
-
-app.post('/api/game/start', (req, res) => {
-  db.run("UPDATE global_state SET status = 'playing' WHERE id = 1", [], () => {
-    io.emit('game_started');
-    res.json({ success: true });
-  });
-});
-
-app.post('/api/admin/gps_mode', (req, res) => {
-  const { mode } = req.body;
-  db.run("UPDATE global_state SET gps_mode = ? WHERE id = 1", [mode], () => {
-    io.emit('state_updated');
-    res.json({ success: true });
-  });
-});
-
-// OwnTracks Webhook (Tar emot positioner i bakgrunden utan att webbläsaren är igång!)
-app.post('/api/owntracks', (req, res) => {
-  const { _type, lat, lon, topic } = req.body;
-  
-  if (_type === 'location' && topic) {
-    // Topic = "tagacross/lag-rod", split by "/" to get "lag-rod"
-    const parts = topic.split('/');
-    const teamNameSlug = parts[parts.length - 1]; 
-    
-    // Convert slug back to team name or search
-    const searchMap = {
-      'lag-rod': 'Lag Röd',
-      'lag-bla': 'Lag Blå',
-      'lag-gron': 'Lag Grön'
-    };
-    
-    const actualTeamName = searchMap[teamNameSlug] || teamNameSlug;
-
-    db.get("SELECT id FROM teams WHERE name = ? COLLATE NOCASE", [actualTeamName], (err, team) => {
-      if (team) {
-        db.run("UPDATE teams SET lat = ?, lng = ? WHERE id = ?", [lat, lon, team.id], () => {
-          io.emit('position_update', { team_id: team.id, lat, lng: lon });
-        });
-      }
-    });
+  const state = await get("SELECT game_pin, status FROM global_state WHERE id = 1");
+  if (state.game_pin !== pin) return res.status(401).json({ error: 'Fel PIN-kod' });
+  if (state.status !== 'lobby' && state.status !== 'waiting') {
+    return res.status(400).json({ error: 'Spelet har redan startat' });
   }
-  
-  // OwnTracks expects empty JSON or 200 OK
+
+  // Utan den här kontrollen kunde vem som helst ta över en lagkamrats identitet
+  // genom att skriva samma namn. Den som tappat sin session får hjälp av domaren.
+  const taken = await get("SELECT id FROM players WHERE name = ? COLLATE NOCASE", [name]);
+  if (taken) return res.status(409).json({ error: 'Namnet är upptaget i det här spelet' });
+
+  const token = newKey();
+  const result = await run("INSERT INTO players (name, token) VALUES (?, ?)", [name, token]);
+  io.emit('lobby_updated');
+  res.json({ success: true, player: { id: result.lastID, name, team_id: null }, token });
+}));
+
+app.get('/api/auth/me', requirePlayer, wrap(async (req, res) => {
+  const player = await get(`SELECT players.id, players.name, players.team_id,
+      teams.name as team_name, teams.role, teams.track_key
+    FROM players LEFT JOIN teams ON players.team_id = teams.id
+    WHERE players.id = ?`, [req.player.id]);
+  res.json({ player });
+}));
+
+app.post('/api/admin/login', wrap(async (req, res) => {
+  if (!auth.passwordMatches(req.body.password)) {
+    return res.status(401).json({ error: 'Fel lösenord' });
+  }
+  res.json({ success: true, token: await auth.issueAdminToken() });
+}));
+
+// --------------------------------------------------------------- Domarpanelen
+
+app.post('/api/admin/create_game', requireAdmin, wrap(async (req, res) => {
+  const pin = Math.floor(1000 + Math.random() * 9000).toString();
+  await run("DELETE FROM players");
+  await run("DELETE FROM feed");
+  await run(`UPDATE teams SET points = 0, lat = NULL, lng = NULL, head_start_until = NULL,
+    current_transport = NULL, transport_start_time = NULL,
+    current_destination_id = NULL, current_challenge_id = NULL`);
+  await run("UPDATE cards SET drawn = 0");
+  await run(`UPDATE global_state SET status = 'lobby', game_pin = ?, lunch_break_active = 0,
+    lunch_break_until = NULL, lunch_break_done = 0, game_ends_at = NULL WHERE id = 1`, [pin]);
+
+  // Exakt ett löparlag vid start, enligt regelboken.
+  const teams = await all("SELECT id FROM teams ORDER BY id");
+  await run("UPDATE teams SET role = 'chaser'");
+  if (teams.length) {
+    const runner = teams[Math.floor(Math.random() * teams.length)];
+    await run("UPDATE teams SET role = 'runner' WHERE id = ?", [runner.id]);
+  }
+
+  io.emit('lobby_updated');
+  io.emit('state_updated');
+  res.json({ success: true, game_pin: pin });
+}));
+
+app.post('/api/admin/assign_team', requireAdmin, wrap(async (req, res) => {
+  const { player_id, team_id } = req.body;
+  await run("UPDATE players SET team_id = ? WHERE id = ?", [team_id, player_id]);
+  io.emit('lobby_updated');
+  res.json({ success: true });
+}));
+
+app.post('/api/admin/randomize_teams', requireAdmin, wrap(async (req, res) => {
+  const players = await all("SELECT id FROM players");
+  const teams = await all("SELECT id FROM teams");
+  if (!players.length || !teams.length) {
+    // Den gamla versionen svarade bara inifrån en räknare i forEach och lämnade
+    // requesten hängande för alltid när lobbyn var tom.
+    return res.status(400).json({ error: 'Inga spelare eller lag att slumpa' });
+  }
+
+  const shuffled = [...players].sort(() => 0.5 - Math.random());
+  for (let i = 0; i < shuffled.length; i++) {
+    await run("UPDATE players SET team_id = ? WHERE id = ?", [teams[i % teams.length].id, shuffled[i].id]);
+  }
+
+  io.emit('lobby_updated');
+  res.json({ success: true });
+}));
+
+app.post('/api/admin/gps_mode', requireAdmin, wrap(async (req, res) => {
+  await run("UPDATE global_state SET gps_mode = ? WHERE id = 1", [req.body.mode]);
+  io.emit('state_updated');
+  res.json({ success: true });
+}));
+
+app.post('/api/game/start', requireAdmin, wrap(async (req, res) => {
+  await run("UPDATE global_state SET status = 'playing' WHERE id = 1");
+  io.emit('game_started');
+  res.json({ success: true });
+}));
+
+app.get('/api/admin/cards', requireAdmin, wrap(async (req, res) => {
+  res.json({ cards: await all("SELECT * FROM cards") });
+}));
+
+app.post('/api/admin/cards', requireAdmin, wrap(async (req, res) => {
+  const { type, name, value, lat, lng, description } = req.body;
+  const result = await run(
+    "INSERT INTO cards (type, name, value, lat, lng, description, drawn) VALUES (?, ?, ?, ?, ?, ?, 0)",
+    [type, name, value, lat, lng, description]);
+  res.json({ success: true, id: result.lastID });
+}));
+
+app.put('/api/admin/cards/:id', requireAdmin, wrap(async (req, res) => {
+  const { name, value, lat, lng, description } = req.body;
+  await run("UPDATE cards SET name = ?, value = ?, lat = ?, lng = ?, description = ? WHERE id = ?",
+    [name, value, lat, lng, description, req.params.id]);
+  res.json({ success: true });
+}));
+
+// -------------------------------------------------------------------- Position
+
+async function storePosition(teamId, lat, lng) {
+  await run("UPDATE teams SET lat = ?, lng = ? WHERE id = ?", [lat, lng, teamId]);
+  io.emit('position_update', { team_id: teamId, lat, lng });
+}
+
+app.post('/api/game/position', requirePlayer, wrap(async (req, res) => {
+  const state = await get("SELECT gps_mode FROM global_state WHERE id = 1");
+  if (state.gps_mode === 'off') return res.status(403).json({ error: 'Positionering är avstängd av domaren' });
+  if (!req.player.team_id) return res.status(403).json({ error: 'Du har inget lag ännu' });
+
+  // team_id kommer från spelarens token, aldrig från bodyn -- annars kan vem som
+  // helst skriva löparlagets position till valfri punkt.
+  const { lat, lng } = req.body;
+  await storePosition(req.player.team_id, lat, lng);
+  res.json({ success: true });
+}));
+
+// OwnTracks kör i bakgrunden utan att webbläsaren är igång. Laget identifieras
+// med sin track_key i stället för med en gissad topic-slug -- det autentiserar
+// anropet och tar bort den bräckliga namnmappningen på samma gång.
+app.post('/api/owntracks', wrap(async (req, res) => {
+  const { _type, lat, lon } = req.body;
+  if (_type !== 'location') return res.json([]);
+
+  const key = req.query.key;
+  const team = key && await get("SELECT id FROM teams WHERE track_key = ?", [key]);
+  if (!team) return res.status(401).json([]);
+
+  const state = await get("SELECT gps_mode FROM global_state WHERE id = 1");
+  if (state.gps_mode === 'off') return res.json([]);
+
+  await storePosition(team.id, lat, lon);
   res.json([]);
-});
+}));
 
-// REST OF API
-app.get('/api/game/destinations', (req, res) => {
-  db.all("SELECT id, name, lat, lng FROM cards WHERE type = 'destination'", [], (err, destinations) => {
-    res.json({ destinations });
-  });
-});
+// ------------------------------------------------------------------------ Feed
 
-app.get('/api/admin/cards', (req, res) => {
-  db.all("SELECT * FROM cards", [], (err, cards) => {
-    res.json({ cards });
-  });
-});
+app.get('/api/feed', wrap(async (req, res) => {
+  const feed = await all(`SELECT feed.*, teams.name as team_name FROM feed
+    LEFT JOIN teams ON feed.team_id = teams.id ORDER BY timestamp DESC LIMIT 50`);
+  res.json({ feed });
+}));
 
-app.post('/api/admin/cards', (req, res) => {
-  const { type, name, value, lat, lng } = req.body;
-  db.run("INSERT INTO cards (type, name, value, lat, lng, drawn) VALUES (?, ?, ?, ?, ?, 0)", [type, name, value, lat, lng], function () {
-    res.json({ success: true, id: this.lastID });
-  });
-});
-
-app.put('/api/admin/cards/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, value, lat, lng } = req.body;
-  db.run("UPDATE cards SET name = ?, value = ?, lat = ?, lng = ? WHERE id = ?", [name, value, lat, lng, id], function () {
-    res.json({ success: true });
-  });
-});
-
-app.post('/api/cards/draw', (req, res) => {
-  const { type, team_id } = req.body; 
-  db.get("SELECT * FROM cards WHERE type = ? AND drawn = 0 ORDER BY RANDOM() LIMIT 1", [type], (err, card) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!card) return res.status(404).json({ error: 'Inga kort kvar' });
-    
-    db.run("UPDATE cards SET drawn = 1 WHERE id = ?", [card.id], () => {
-      io.emit('card_drawn', { team_id, card });
-      res.json({ card });
-    });
-  });
-});
-
-app.post('/api/game/position', (req, res) => {
-  const { team_id, lat, lng } = req.body;
-  db.run("UPDATE teams SET lat = ?, lng = ? WHERE id = ?", [lat, lng, team_id], () => {
-    io.emit('position_update', { team_id, lat, lng });
-    res.json({ success: true });
-  });
-});
-
-app.get('/api/feed', (req, res) => {
-  db.all("SELECT feed.*, teams.name as team_name FROM feed LEFT JOIN teams ON feed.team_id = teams.id ORDER BY timestamp DESC LIMIT 50", [], (err, rows) => {
-    res.json({ feed: rows });
-  });
-});
-
-app.post('/api/feed/upload', upload.single('media'), (req, res) => {
-  const { team_id, type, message, player_name } = req.body;
+app.post('/api/feed/upload', requirePlayer, upload.single('media'), wrap(async (req, res) => {
+  const { type, message } = req.body;
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-  db.run("INSERT INTO feed (team_id, player_name, type, message, image_url) VALUES (?, ?, ?, ?, ?)", 
-    [team_id, player_name, type, message, imageUrl], function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      
-      const newEntry = { id: this.lastID, team_id, player_name, type, message, image_url: imageUrl };
-      io.emit('new_feed_entry', newEntry);
-      res.json({ success: true, entry: newEntry });
-  });
-});
+  const result = await run(
+    "INSERT INTO feed (team_id, player_name, type, message, image_url) VALUES (?, ?, ?, ?, ?)",
+    [req.player.team_id, req.player.name, type, message, imageUrl]);
 
-// Socket.io logic
+  const entry = await get(`SELECT feed.*, teams.name as team_name FROM feed
+    LEFT JOIN teams ON feed.team_id = teams.id WHERE feed.id = ?`, [result.lastID]);
+  io.emit('new_feed_entry', entry);
+  res.json({ success: true, entry });
+}));
+
+// ------------------------------------------------------------------------ Kort
+
+app.post('/api/cards/draw', requirePlayer, requireRunner, wrap(async (req, res) => {
+  const { type } = req.body;
+  const card = await get("SELECT * FROM cards WHERE type = ? AND drawn = 0 ORDER BY RANDOM() LIMIT 1", [type]);
+  if (!card) return res.status(404).json({ error: 'Inga kort kvar' });
+
+  await run("UPDATE cards SET drawn = 1 WHERE id = ?", [card.id]);
+  io.emit('card_drawn', { team_id: req.player.team_id, card });
+  res.json({ card });
+}));
+
 io.on('connection', (socket) => {
-  console.log('User connected', socket.id);
-  socket.on('disconnect', () => {
-    console.log('User disconnected', socket.id);
-  });
+  socket.on('disconnect', () => {});
 });
 
-server.listen(3002, () => {
-  console.log('Server running on port 3002');
+app.use((err, req, res, next) => {
+  console.error('Fel i request:', req.method, req.path, err.message);
+  res.status(err.status || 500).json({ error: err.message || 'Internt serverfel' });
+});
+
+Promise.all([dbReady, auth.ready]).then(() => {
+  server.listen(3002, () => console.log('Server running on port 3002'));
 });
