@@ -42,24 +42,53 @@ const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
 const uploadDir = process.env.UPLOAD_DIR || path.join(dataDir, 'uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 
+// Explicit allowlist, inte /^(image|video)\//. Ett brett mönster släpper igenom
+// image/svg+xml, och en SVG som serveras från appens egen origin kan köra
+// script -- alltså lagrad XSS mot alla som öppnar feeden.
+const ALLOWED_UPLOAD_TYPES = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/heic': '.heic',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm'
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
-    // Enda försvaret mot path traversal på en rutt utan riktig auth framför sig.
-    const cleanName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-    cb(null, Date.now() + '-' + cleanName);
+    // Saneringen är försvaret mot path traversal på en rutt utan riktig auth
+    // framför sig. Ändelsen sätts från MIME-typen i stället för från klientens
+    // filnamn, så en .html kan inte smygas in bakom ett tillåtet innehåll.
+    const base = path.basename(file.originalname, path.extname(file.originalname))
+      .replace(/[^a-zA-Z0-9.-]/g, '_')
+      .slice(0, 60);
+    cb(null, `${Date.now()}-${base}${ALLOWED_UPLOAD_TYPES[file.mimetype]}`);
   }
 });
 const upload = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const ok = /^(image|video)\//.test(file.mimetype);
-    cb(ok ? null : new Error('Endast bilder och filmer får laddas upp'), ok);
+    if (Object.prototype.hasOwnProperty.call(ALLOWED_UPLOAD_TYPES, file.mimetype)) return cb(null, true);
+    const err = new Error('Endast foton och filmer får laddas upp');
+    err.status = 400;
+    cb(err, false);
   }
 });
 
-app.use('/uploads', express.static(uploadDir));
+app.use('/uploads', express.static(uploadDir, {
+  setHeaders: (res) => {
+    // nosniff hindrar att en felmärkt fil tolkas som HTML; sandbox-CSP:n gör
+    // allt skriptbart innehåll verkningslöst även om något tar sig förbi
+    // allowlistan. Content-Disposition sätts inte -- den skulle stoppa
+    // bildbevisen från att visas i feeden.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  }
+}));
 
 // Låter rutterna skrivas sekventiellt och skickar fel till felhanteraren i
 // stället för att tysta dem eller lämna requesten hängande.
@@ -285,6 +314,9 @@ io.on('connection', (socket) => {
 
 app.use((err, req, res, next) => {
   console.error('Fel i request:', req.method, req.path, err.message);
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'Filen är för stor (max 25 MB)' });
+  }
   res.status(err.status || 500).json({ error: err.message || 'Internt serverfel' });
 });
 
