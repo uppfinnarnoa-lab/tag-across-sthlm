@@ -18,6 +18,9 @@ const server = http.createServer(app);
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ||
   'http://localhost:3001,capacitor://localhost,ionic://localhost').split(',').map(o => o.trim());
 
+// Den publika adressen servern nås på. Används för att bygga OwnTracks-webhooken.
+const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:3001').replace(/\/$/, '');
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && allowedOrigins.includes(origin)) {
@@ -100,18 +103,33 @@ const requireAdmin = wrap(auth.requireAdmin);
 
 // ---------------------------------------------------------------- Speltillstånd
 
-app.get('/api/game/state', wrap(async (req, res) => {
+// Det enda en icke-inloggad behöver: vilken vy appen ska visa. Här får varken
+// PIN-koden, lagens positioner eller spelarnas namn följa med -- PIN:en är
+// nyckeln in i spelet, och den låg tidigare öppet i /api/game/state.
+app.get('/api/game/status', wrap(async (req, res) => {
+  const state = await get("SELECT status, gps_mode FROM global_state WHERE id = 1");
+  res.json({ state });
+}));
+
+app.get('/api/game/state', requirePlayer, wrap(async (req, res) => {
   const teams = await all("SELECT id, name, points, role, lat, lng, head_start_until FROM teams ORDER BY points DESC");
-  const state = await get("SELECT id, status, game_pin, gps_mode, lunch_break_active, lunch_break_until, game_ends_at FROM global_state WHERE id = 1");
+  const state = await get(`SELECT id, status, gps_mode, lunch_break_active, lunch_break_until, game_ends_at
+    FROM global_state WHERE id = 1`);
   res.json({ teams, state });
 }));
 
-app.get('/api/game/destinations', wrap(async (req, res) => {
+app.get('/api/admin/state', requireAdmin, wrap(async (req, res) => {
+  const teams = await all("SELECT id, name, points, role, lat, lng, track_key FROM teams ORDER BY id");
+  const state = await get("SELECT * FROM global_state WHERE id = 1");
+  res.json({ teams, state });
+}));
+
+app.get('/api/game/destinations', requirePlayer, wrap(async (req, res) => {
   const destinations = await all("SELECT id, name, lat, lng FROM cards WHERE type = 'destination'");
   res.json({ destinations });
 }));
 
-app.get('/api/lobby', wrap(async (req, res) => {
+app.get('/api/lobby', requirePlayer, wrap(async (req, res) => {
   const players = await all(`SELECT players.id, players.name, teams.id as team_id, teams.name as team_name
     FROM players LEFT JOIN teams ON players.team_id = teams.id`);
   res.json({ players });
@@ -119,8 +137,13 @@ app.get('/api/lobby', wrap(async (req, res) => {
 
 // ------------------------------------------------------------------------ Auth
 
+// Fritext från spelare hamnar i databasen och i feeden. React escapar vid
+// rendering, men längden måste kapas vid systemgränsen.
+const trimmed = (value, max) => String(value ?? '').trim().slice(0, max);
+
 app.post('/api/auth/join', wrap(async (req, res) => {
-  const { pin, name } = req.body;
+  const pin = trimmed(req.body.pin, 8);
+  const name = trimmed(req.body.name, 40);
   if (!pin || !name) return res.status(400).json({ error: 'Data saknas' });
 
   const state = await get("SELECT game_pin, status FROM global_state WHERE id = 1");
@@ -145,7 +168,14 @@ app.get('/api/auth/me', requirePlayer, wrap(async (req, res) => {
       teams.name as team_name, teams.role, teams.track_key
     FROM players LEFT JOIN teams ON players.team_id = teams.id
     WHERE players.id = ?`, [req.player.id]);
-  res.json({ player });
+
+  // Webhook-adressen byggs av servern, inte av klientens window.location.origin
+  // -- en callback-URL får aldrig härledas ur något anroparen kontrollerar.
+  const owntracksUrl = player.track_key
+    ? `${PUBLIC_URL}/api/owntracks?key=${player.track_key}`
+    : null;
+
+  res.json({ player, owntracks_url: owntracksUrl });
 }));
 
 app.post('/api/admin/login', wrap(async (req, res) => {
@@ -276,16 +306,18 @@ app.post('/api/owntracks', wrap(async (req, res) => {
 
 // ------------------------------------------------------------------------ Feed
 
-app.get('/api/feed', wrap(async (req, res) => {
+app.get('/api/feed', requirePlayer, wrap(async (req, res) => {
   const feed = await all(`SELECT feed.*, teams.name as team_name FROM feed
     LEFT JOIN teams ON feed.team_id = teams.id ORDER BY timestamp DESC LIMIT 50`);
   res.json({ feed });
 }));
 
 app.post('/api/feed/upload', requirePlayer, upload.single('media'), wrap(async (req, res) => {
-  const { type, message } = req.body;
+  const type = trimmed(req.body.type, 20);
+  const message = trimmed(req.body.message, 280);
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
+  // Lag och avsändare härleds ur token, aldrig ur bodyn.
   const result = await run(
     "INSERT INTO feed (team_id, player_name, type, message, image_url) VALUES (?, ?, ?, ?, ?)",
     [req.player.team_id, req.player.name, type, message, imageUrl]);

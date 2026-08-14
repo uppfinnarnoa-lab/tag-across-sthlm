@@ -20,8 +20,13 @@ function passwordMatches(candidate) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// En match är en dag lång. En domarsession som aldrig går ut är en nyckel som
+// ligger kvar i en telefon för alltid.
+const ADMIN_SESSION_HOURS = 12;
+
 async function issueAdminToken() {
   const token = newKey();
+  await run("DELETE FROM admin_sessions WHERE created_at < datetime('now', ?)", [`-${ADMIN_SESSION_HOURS} hours`]);
   await run("INSERT INTO admin_sessions (token) VALUES (?)", [token]);
   return token;
 }
@@ -34,7 +39,9 @@ function bearerToken(req) {
 async function requireAdmin(req, res, next) {
   const token = bearerToken(req);
   if (!token) return res.status(401).json({ error: 'Domarbehörighet krävs' });
-  const session = await get("SELECT token FROM admin_sessions WHERE token = ?", [token]);
+  const session = await get(
+    "SELECT token FROM admin_sessions WHERE token = ? AND created_at >= datetime('now', ?)",
+    [token, `-${ADMIN_SESSION_HOURS} hours`]);
   if (!session) return res.status(401).json({ error: 'Domarsessionen har gått ut' });
   next();
 }
