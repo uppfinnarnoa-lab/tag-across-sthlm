@@ -7,6 +7,7 @@ const multer = require('multer');
 
 const { run, get, all, ready: dbReady, newKey } = require('./database');
 const auth = require('./auth');
+const { createGameRoutes } = require('./game');
 
 const app = express();
 const server = http.createServer(app);
@@ -244,8 +245,14 @@ app.post('/api/admin/gps_mode', requireAdmin, wrap(async (req, res) => {
 
 app.post('/api/game/start', requireAdmin, wrap(async (req, res) => {
   await run("UPDATE global_state SET status = 'playing' WHERE id = 1");
-  io.emit('game_started');
-  res.json({ success: true });
+
+  // "Spelet startar med att löparlaget drar ett destinationskort och ger sig
+  // iväg med ett försprång på 10 min."
+  const headStartUntil = new Date(Date.now() + 10 * 60000).toISOString();
+  await run("UPDATE teams SET head_start_until = ? WHERE role = 'runner'", [headStartUntil]);
+
+  io.emit('game_started', { head_start_until: headStartUntil });
+  res.json({ success: true, head_start_until: headStartUntil });
 }));
 
 app.get('/api/admin/cards', requireAdmin, wrap(async (req, res) => {
@@ -328,16 +335,10 @@ app.post('/api/feed/upload', requirePlayer, upload.single('media'), wrap(async (
   res.json({ success: true, entry });
 }));
 
-// ------------------------------------------------------------------------ Kort
+// --------------------------------------------------------------- Spelloopet
 
-app.post('/api/cards/draw', requirePlayer, requireRunner, wrap(async (req, res) => {
-  const { type } = req.body;
-  const card = await get("SELECT * FROM cards WHERE type = ? AND drawn = 0 ORDER BY RANDOM() LIMIT 1", [type]);
-  if (!card) return res.status(404).json({ error: 'Inga kort kvar' });
-
-  await run("UPDATE cards SET drawn = 1 WHERE id = ?", [card.id]);
-  io.emit('card_drawn', { team_id: req.player.team_id, card });
-  res.json({ card });
+app.use('/api/game', createGameRoutes({
+  io, upload, wrap, requirePlayer, requireRunner, requireAdmin
 }));
 
 io.on('connection', (socket) => {
