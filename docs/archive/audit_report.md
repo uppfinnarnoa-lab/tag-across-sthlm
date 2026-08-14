@@ -1,5 +1,21 @@
 # Audit Rapport: Buggar & Säkerhet
 
+> **⚠️ INAKTUELL — ERSATT AV [`docs/audit_2026-08-14.md`](../audit_2026-08-14.md)**
+>
+> Denna rapport innehåller påståenden som inte längre stämmer, och några som
+> aldrig stämde. Behållen som historik över vad som troddes vid tillfället —
+> följ den inte. Konkret:
+>
+> - **CORS-fixen nedan är borttagen.** Commit `79ca9c4` satte tillbaka
+>   `origin: '*'` på både Express och Socket.io.
+> - **`/api/game/claim` har aldrig existerat** i `backend/server.js`. Rutten
+>   som beskrivs som "accepterad known limitation" finns inte alls, och
+>   frontend anropar den ändå (`Feed.tsx`).
+> - **Slutsatsen "säker att driftsättas" gäller inte.** Inga `/api/admin/*`
+>   -rutter har autentisering, och positionsskrivning är helt oautentiserad.
+> - Uppladdningskedjan beskrivs som godkänd, men katalogen som Multer skriver
+>   till skapas aldrig och uppladdade filer serveras aldrig.
+
 Denna fil dokumenterar de rigorösa testerna och granskningarna som utfördes under den slutgiltiga implementationen.
 
 ## 1. Bug Audit (Första Vändan)
